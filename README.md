@@ -1,5 +1,9 @@
 # Queryx 🔍
 
+![CI](https://github.com/langoustine69/queryx/actions/workflows/ci.yml/badge.svg)
+![Network: Base](https://img.shields.io/badge/network-Base-blue)
+![Payment: x402](https://img.shields.io/badge/payment-x402%20USDC-green)
+
 > Agent-native search API. Pay per query in USDC via x402. No accounts. No subscriptions. Structured JSON.
 
 **5-14x cheaper than Perplexity. Native x402 payments. Zero friction for agents.**
@@ -36,6 +40,13 @@ curl -H "PAYMENT-SIGNATURE: <x402-sig>" \
 | x402 native | ❌ | ❌ | ✅ |
 | No account needed | ❌ | ❌ | ✅ |
 | Agent JSON output | ❌ | ✅ | ✅ |
+
+## Documentation
+
+- [OpenAPI Spec](./openapi.json) — Full API specification
+- [Agent Guide](./docs/AGENT_GUIDE.md) — How to use Queryx as an AI agent
+- [Pricing](./docs/PRICING.md) — Detailed pricing and comparisons
+- [Deploy Guide](./DEPLOY.md) — Railway deployment from zero
 
 ## License
 

@@ -1,0 +1,166 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Queryx",
+    "version": "0.1.0",
+    "description": "Agent-native web search API. Pay per query in USDC via x402 on Base.",
+    "contact": { "url": "https://queryx.run" },
+    "license": { "name": "MIT" }
+  },
+  "servers": [
+    { "url": "https://queryx.run", "description": "Production" },
+    { "url": "http://localhost:3000", "description": "Local development" }
+  ],
+  "security": [{ "x402": [] }],
+  "components": {
+    "securitySchemes": {
+      "x402": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-PAYMENT",
+        "description": "x402 USDC payment proof on Base Mainnet. See https://x402.org for the protocol spec. The server returns HTTP 402 with payment requirements in the response headers if this is missing or invalid."
+      }
+    },
+    "schemas": {
+      "Source": {
+        "type": "object",
+        "required": ["title", "url", "snippet"],
+        "properties": {
+          "title": { "type": "string" },
+          "url": { "type": "string", "format": "uri" },
+          "snippet": { "type": "string" },
+          "published": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Freshness": {
+        "type": "object",
+        "required": ["fetchedAt", "resultsAge"],
+        "properties": {
+          "fetchedAt": { "type": "string", "format": "date-time" },
+          "resultsAge": { "type": "string", "examples": ["4h", "2d", "<1h"] }
+        }
+      },
+      "Tokens": {
+        "type": "object",
+        "required": ["in", "out"],
+        "properties": {
+          "in": { "type": "integer" },
+          "out": { "type": "integer" }
+        }
+      },
+      "SearchResponse": {
+        "type": "object",
+        "required": ["query", "answer", "sources", "confidence", "freshness", "model", "tokens"],
+        "properties": {
+          "query": { "type": "string" },
+          "answer": { "type": "string" },
+          "sources": { "type": "array", "items": { "$ref": "#/components/schemas/Source" } },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "freshness": { "$ref": "#/components/schemas/Freshness" },
+          "model": { "type": "string" },
+          "tokens": { "$ref": "#/components/schemas/Tokens" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error", "code", "status"],
+        "properties": {
+          "error": { "type": "string" },
+          "code": { "type": "string" },
+          "status": { "type": "integer" }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": ["status", "version", "uptime"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ok"] },
+          "version": { "type": "string" },
+          "uptime": { "type": "integer", "description": "Uptime in seconds" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/v1/search": {
+      "get": {
+        "operationId": "search",
+        "summary": "Web search + AI synthesis",
+        "description": "Search the web and get an AI-synthesized answer with sources. Costs $0.001 USDC per call.",
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" }, "example": "latest developments in quantum computing" },
+          { "name": "count", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful search response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResponse" } } }
+          },
+          "400": { "description": "Invalid query", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "402": { "description": "Payment required — include x402 payment header" },
+          "429": { "description": "Rate limit exceeded" },
+          "500": { "description": "Internal server error" }
+        }
+      }
+    },
+    "/v1/search/news": {
+      "get": {
+        "operationId": "searchNews",
+        "summary": "News-focused search + AI synthesis",
+        "description": "Search recent news and get an AI-synthesized answer. Costs $0.001 USDC per call.",
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" }, "example": "AI regulation Europe 2026" },
+          { "name": "count", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5 } }
+        ],
+        "responses": {
+          "200": { "description": "Successful news search", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResponse" } } } },
+          "400": { "description": "Invalid query" },
+          "402": { "description": "Payment required" },
+          "429": { "description": "Rate limit exceeded" },
+          "500": { "description": "Internal server error" }
+        }
+      }
+    },
+    "/v1/search/deep": {
+      "post": {
+        "operationId": "searchDeep",
+        "summary": "Multi-source deep research",
+        "description": "Deep research across multiple sources with comprehensive synthesis. Costs $0.005 USDC per call.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                  "query": { "type": "string", "example": "comparison of vector databases for production RAG systems" },
+                  "sources": { "type": "integer", "minimum": 1, "maximum": 10, "default": 5 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Successful deep research", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResponse" } } } },
+          "400": { "description": "Invalid request body" },
+          "402": { "description": "Payment required" },
+          "422": { "description": "Unprocessable query" },
+          "429": { "description": "Rate limit exceeded" },
+          "500": { "description": "Internal server error" }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "Health check (free)",
+        "description": "Returns server health status. No payment required.",
+        "security": [],
+        "responses": {
+          "200": { "description": "Healthy", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } } }
+        }
+      }
+    }
+  }
+}
