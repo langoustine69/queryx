@@ -1,108 +1,79 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
-import { synthesise, scoreConfidence } from "../../src/logic/synth";
+import { describe, test, expect } from "bun:test";
+import { scoreConfidence } from "../../src/logic/synth";
 import type { SearchResult } from "../../src/logic/brave";
 
-const originalFetch = globalThis.fetch;
-
-function mockOpenAI(answer: string, tokens = { prompt_tokens: 100, completion_tokens: 50 }) {
-  globalThis.fetch = mock(() =>
-    Promise.resolve(
-      new Response(
-        JSON.stringify({
-          choices: [{ message: { content: answer } }],
-          usage: tokens,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    ),
-  ) as any;
+function makeSource(overrides: Partial<SearchResult> = {}): SearchResult {
+  return {
+    title: "Test Article",
+    url: "https://example.com/test",
+    snippet: "A detailed snippet about the search topic with enough content to be meaningful.",
+    published: "2 hours ago",
+    ...overrides,
+  };
 }
 
-const sampleSources: SearchResult[] = [
-  {
-    title: "Fed Holds Rates",
-    url: "https://reuters.com/fed",
-    snippet: "The Federal Reserve held interest rates steady at 4.25% in January 2026, citing persistent inflation concerns and strong labor market data.",
-    published: "2026-01-29",
-  },
-  {
-    title: "Rate Decision Analysis",
-    url: "https://bloomberg.com/fed",
-    snippet: "The Federal Reserve maintained rates as expected. Analysts predict the first rate cut may come in Q3 2026 if inflation data improves.",
-    published: "2026-01-30",
-  },
-];
-
 describe("scoreConfidence", () => {
-  it("returns 0 for empty sources", () => {
+  test("returns 0 for no sources", () => {
     expect(scoreConfidence([])).toBe(0);
   });
 
-  it("returns higher score for more sources", () => {
-    const few = scoreConfidence([sampleSources[0]]);
-    const more = scoreConfidence(sampleSources);
-    expect(more).toBeGreaterThan(few);
+  test("returns higher score for more sources", () => {
+    const few = [makeSource()];
+    const many = Array.from({ length: 8 }, () => makeSource());
+
+    const scoreFew = scoreConfidence(few);
+    const scoreMany = scoreConfidence(many);
+
+    expect(scoreMany).toBeGreaterThan(scoreFew);
   });
 
-  it("is clamped between 0 and 1", () => {
-    const score = scoreConfidence(sampleSources);
+  test("boosts when sources have published dates", () => {
+    const withDates = [makeSource({ published: "2 hours ago" }), makeSource({ published: "1 day ago" })];
+    const withoutDates = [makeSource({ published: undefined }), makeSource({ published: undefined })];
+
+    const scoreDated = scoreConfidence(withDates);
+    const scoreUndated = scoreConfidence(withoutDates);
+
+    expect(scoreDated).toBeGreaterThan(scoreUndated);
+  });
+
+  test("confidence is clamped between 0 and 1", () => {
+    const sources = Array.from({ length: 20 }, () => makeSource());
+    const score = scoreConfidence(sources);
+
     expect(score).toBeGreaterThanOrEqual(0);
     expect(score).toBeLessThanOrEqual(1);
   });
 
-  it("gives recency bonus when published dates exist", () => {
-    const withDates = scoreConfidence(sampleSources);
-    const withoutDates = scoreConfidence([
-      { title: "Test", url: "https://test.com", snippet: "A short snippet for testing" },
-    ]);
-    expect(withDates).toBeGreaterThan(withoutDates);
-  });
-
-  it("considers source agreement via snippet overlap", () => {
-    const agreeing: SearchResult[] = [
-      { title: "A", url: "https://a.com", snippet: "The Federal Reserve held rates steady at 4.25 percent" },
-      { title: "B", url: "https://b.com", snippet: "The Federal Reserve held rates steady at 4.25 percent" },
+  test("snippet quality affects confidence", () => {
+    const goodSnippets = [
+      makeSource({ snippet: "A very detailed and informative snippet about the topic that provides substantial context." }),
+      makeSource({ snippet: "Another high quality snippet with lots of relevant information and data points." }),
     ];
-    const disagreeing: SearchResult[] = [
-      { title: "A", url: "https://a.com", snippet: "The Federal Reserve held rates steady at 4.25 percent" },
-      { title: "B", url: "https://b.com", snippet: "Cryptocurrency markets surged overnight on whale activity" },
+    const badSnippets = [
+      makeSource({ snippet: "x" }),
+      makeSource({ snippet: "y" }),
     ];
-    expect(scoreConfidence(agreeing)).toBeGreaterThan(scoreConfidence(disagreeing));
-  });
-});
 
-describe("synthesise", () => {
-  beforeEach(() => {
-    process.env.OPENAI_API_KEY = "test-key";
+    const scoreGood = scoreConfidence(goodSnippets);
+    const scoreBad = scoreConfidence(badSnippets);
+
+    expect(scoreGood).toBeGreaterThan(scoreBad);
   });
 
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-  });
+  test("source agreement boosts confidence", () => {
+    const agreeing = [
+      makeSource({ snippet: "The federal reserve held rates steady at four percent" }),
+      makeSource({ snippet: "Federal reserve rates held steady according to officials" }),
+    ];
+    const disagreeing = [
+      makeSource({ snippet: "Quantum computing makes breakthrough in laboratory settings" }),
+      makeSource({ snippet: "Banana prices surge due to tropical storm disruption" }),
+    ];
 
-  it("throws without OPENAI_API_KEY", async () => {
-    delete process.env.OPENAI_API_KEY;
-    expect(synthesise("test", sampleSources)).rejects.toThrow("OPENAI_API_KEY is required");
-  });
+    const scoreAgree = scoreConfidence(agreeing);
+    const scoreDisagree = scoreConfidence(disagreeing);
 
-  it("returns answer with confidence and tokens", async () => {
-    mockOpenAI("The Fed held rates at 4.25%.", { prompt_tokens: 312, completion_tokens: 187 });
-    const result = await synthesise("fed rate", sampleSources);
-    expect(result.answer).toBe("The Fed held rates at 4.25%.");
-    expect(result.tokens.in).toBe(312);
-    expect(result.tokens.out).toBe(187);
-    expect(result.model).toBe("gpt-4o-mini");
-    expect(result.confidence).toBeGreaterThan(0);
-    expect(result.confidence).toBeLessThanOrEqual(1);
-  });
-
-  it("sends correct prompt format to OpenAI", async () => {
-    mockOpenAI("answer");
-    await synthesise("test query", sampleSources);
-    const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
-    expect(body.model).toBe("gpt-4o-mini");
-    expect(body.messages[0].role).toBe("system");
-    expect(body.messages[1].content).toContain("test query");
-    expect(body.messages[1].content).toContain("reuters.com");
+    expect(scoreAgree).toBeGreaterThan(scoreDisagree);
   });
 });

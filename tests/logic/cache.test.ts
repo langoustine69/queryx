@@ -1,80 +1,80 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach } from "bun:test";
 import { Cache } from "../../src/logic/cache";
 
 describe("Cache", () => {
   let cache: Cache<string>;
 
   beforeEach(() => {
-    cache = new Cache<string>(1); // 1 second TTL for testing
+    cache = new Cache<string>(1); // 1 second TTL
   });
 
-  it("returns null for cache miss", () => {
-    expect(cache.get("nonexistent")).toBeNull();
+  test("returns null for cache miss", () => {
+    const result = cache.get("nonexistent");
+    expect(result).toBeNull();
   });
 
-  it("stores and retrieves values", () => {
-    cache.set("key1", "value1");
-    const result = cache.get("key1");
+  test("returns value for cache hit", () => {
+    cache.set("key", "value");
+    const result = cache.get("key");
     expect(result).not.toBeNull();
-    expect(result!.value).toBe("value1");
+    expect(result!.value).toBe("value");
     expect(result!.stale).toBe(false);
   });
 
-  it("expires entries after TTL", async () => {
-    cache.set("key1", "value1");
-    expect(cache.get("key1")).not.toBeNull();
-
-    // Wait for TTL to expire
-    await new Promise((r) => setTimeout(r, 1100));
-    expect(cache.get("key1")).toBeNull();
+  test("returns null after TTL expiry", async () => {
+    cache = new Cache<string>(0.1); // 100ms TTL
+    cache.set("key", "value");
+    await new Promise((r) => setTimeout(r, 150));
+    const result = cache.get("key");
+    expect(result).toBeNull();
   });
 
-  it("tracks hit/miss stats", () => {
+  test("tracks hit/miss stats", () => {
     cache.set("a", "1");
     cache.get("a"); // hit
-    cache.get("b"); // miss
     cache.get("a"); // hit
+    cache.get("b"); // miss
 
     const stats = cache.stats();
     expect(stats.hits).toBe(2);
     expect(stats.misses).toBe(1);
-    expect(stats.hitRate).toBeCloseTo(2 / 3, 2);
     expect(stats.size).toBe(1);
+    expect(stats.hitRate).toBeCloseTo(0.667, 2);
   });
 
-  it("clears all entries and stats", () => {
+  test("clear resets everything", () => {
     cache.set("a", "1");
     cache.set("b", "2");
     cache.get("a");
     cache.clear();
 
-    expect(cache.get("a")).toBeNull();
     const stats = cache.stats();
-    expect(stats.size).toBe(0);
     expect(stats.hits).toBe(0);
-    expect(stats.misses).toBe(1); // The get("a") after clear
+    expect(stats.misses).toBe(0);
+    expect(stats.size).toBe(0);
+    expect(cache.get("a")).toBeNull();
   });
 
-  it("returns 0 hit rate when no queries", () => {
+  test("hitRate is 0 when no operations", () => {
     expect(cache.stats().hitRate).toBe(0);
   });
 });
 
 describe("Cache.normalizeKey", () => {
-  it("lowercases and trims query", () => {
+  test("normalizes query to lowercase and trimmed", () => {
     expect(Cache.normalizeKey("  Hello World  ")).toBe("hello world");
   });
 
-  it("collapses whitespace", () => {
+  test("collapses whitespace", () => {
     expect(Cache.normalizeKey("hello   world")).toBe("hello world");
   });
 
-  it("appends sorted params", () => {
-    const key = Cache.normalizeKey("test", { z: "1", a: "2" });
-    expect(key).toBe("test|a=2&z=1");
+  test("includes sorted params", () => {
+    const key = Cache.normalizeKey("query", { z: "1", a: "2" });
+    expect(key).toBe("query|a=2&z=1");
   });
 
-  it("ignores empty params", () => {
-    expect(Cache.normalizeKey("test", {})).toBe("test");
+  test("omits params when empty", () => {
+    expect(Cache.normalizeKey("query", {})).toBe("query");
   });
 });
