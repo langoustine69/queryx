@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Queryx — Agent-native search API</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="badge">x402 payments on Base</div>
+      <h1>Search the web.<br>Pay per query.<br>No accounts.</h1>
+      <p class="subtitle">The search API built for agents. 5x cheaper than Perplexity. Native x402 micropayments on Base.</p>
+      <div class="cta-row">
+        <a href="#quickstart" class="btn btn-primary">Try it &rarr;</a>
+        <a href="#pricing" class="btn btn-secondary">View pricing</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing -->
+  <section id="pricing" class="pricing">
+    <div class="container">
+      <h2>Simple pricing</h2>
+      <p class="section-sub">Pay per query. No subscriptions. No API keys. No accounts.</p>
+      <div class="price-grid">
+        <div class="price-card">
+          <div class="endpoint">/v1/search</div>
+          <div class="price">$0.001</div>
+          <div class="price-desc">Web search + AI synthesis. Fast, structured JSON with sources and confidence scores.</div>
+        </div>
+        <div class="price-card">
+          <div class="endpoint">/v1/search/news</div>
+          <div class="price">$0.001</div>
+          <div class="price-desc">News-focused search. Results sorted by recency with publication dates.</div>
+        </div>
+        <div class="price-card featured">
+          <div class="endpoint">/v1/search/deep</div>
+          <div class="price">$0.005</div>
+          <div class="price-desc">Multi-source deep research. Cross-references multiple sources for complex queries.</div>
+        </div>
+      </div>
+      <div class="comparison">
+        <h3>How we compare</h3>
+        <div class="comp-table">
+          <div class="comp-row comp-header">
+            <span></span>
+            <span>Price/query</span>
+            <span>x402</span>
+            <span>No account</span>
+            <span>Agent JSON</span>
+          </div>
+          <div class="comp-row highlight">
+            <span class="provider">Queryx</span>
+            <span class="cheap">$0.001</span>
+            <span class="yes">&#10003;</span>
+            <span class="yes">&#10003;</span>
+            <span class="yes">&#10003;</span>
+          </div>
+          <div class="comp-row">
+            <span class="provider">Perplexity</span>
+            <span class="expensive">$0.005&ndash;0.014</span>
+            <span class="no">&times;</span>
+            <span class="no">&times;</span>
+            <span class="no">&times;</span>
+          </div>
+          <div class="comp-row">
+            <span class="provider">Tavily</span>
+            <span class="expensive">$0.004</span>
+            <span class="no">&times;</span>
+            <span class="no">&times;</span>
+            <span class="yes">&#10003;</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quickstart -->
+  <section id="quickstart" class="quickstart">
+    <div class="container">
+      <h2>Quick start</h2>
+      <p class="section-sub">One curl. That's it.</p>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">bash</span>
+          <button class="copy-btn" onclick="copyCode(this)" data-code='curl -H "PAYMENT-SIGNATURE: <x402-sig>" \
+  "https://queryx.run/v1/search?q=Fed+rate+decision+2026"'>Copy</button>
+        </div>
+        <pre><code>curl -H "PAYMENT-SIGNATURE: &lt;x402-sig&gt;" \
+  "https://queryx.run/v1/search?q=Fed+rate+decision+2026"</code></pre>
+      </div>
+      <details class="response-toggle">
+        <summary>View response</summary>
+        <div class="code-block">
+          <div class="code-header">
+            <span class="code-lang">json</span>
+          </div>
+          <pre><code>{
+  <span class="key">"query"</span>: <span class="str">"Fed rate decision 2026"</span>,
+  <span class="key">"answer"</span>: <span class="str">"The Federal Reserve held rates steady at 4.25-4.50% in its January 2026 meeting, citing persistent inflation concerns..."</span>,
+  <span class="key">"sources"</span>: [
+    {
+      <span class="key">"title"</span>: <span class="str">"Fed Holds Rates Steady in January 2026"</span>,
+      <span class="key">"url"</span>: <span class="str">"https://reuters.com/markets/fed-jan-2026"</span>,
+      <span class="key">"snippet"</span>: <span class="str">"The Federal Reserve maintained its benchmark rate..."</span>,
+      <span class="key">"published"</span>: <span class="str">"2026-01-29T18:00:00Z"</span>
+    }
+  ],
+  <span class="key">"confidence"</span>: <span class="num">0.92</span>,
+  <span class="key">"freshness"</span>: {
+    <span class="key">"fetchedAt"</span>: <span class="str">"2026-02-27T10:30:00Z"</span>,
+    <span class="key">"resultsAge"</span>: <span class="str">"29d"</span>
+  },
+  <span class="key">"model"</span>: <span class="str">"queryx-fast-v1"</span>,
+  <span class="key">"tokens"</span>: { <span class="key">"in"</span>: <span class="num">312</span>, <span class="key">"out"</span>: <span class="num">187</span> }
+}</code></pre>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="how-it-works">
+    <div class="container">
+      <h2>How it works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-icon">&#128269;</div>
+          <div class="step-num">1</div>
+          <h3>Agent sends query</h3>
+          <p>Your agent hits the API with a search query and an x402 payment signature.</p>
+        </div>
+        <div class="step-arrow">&rarr;</div>
+        <div class="step">
+          <div class="step-icon">&#9889;</div>
+          <div class="step-num">2</div>
+          <h3>Payment verified</h3>
+          <p>x402 USDC micropayment verified on Base in under 100ms. No accounts, no API keys.</p>
+        </div>
+        <div class="step-arrow">&rarr;</div>
+        <div class="step">
+          <div class="step-icon">&#128202;</div>
+          <div class="step-num">3</div>
+          <h3>Structured JSON returned</h3>
+          <p>Search results synthesized by AI with sources, confidence scores, and freshness metadata.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-links">
+        <a href="https://github.com/langoustine69/queryx">GitHub</a>
+        <a href="https://xgate.run">xgate.run</a>
+      </div>
+      <div class="footer-credit">Built by <a href="https://github.com/langoustine69">@langoustine69</a></div>
+    </div>
+  </footer>
+
+  <script>
+    function copyCode(btn) {
+      const code = btn.getAttribute('data-code');
+      navigator.clipboard.writeText(code).then(() => {
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy', 2000);
+      });
+    }
+  </script>
+</body>
+</html>
