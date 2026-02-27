@@ -8,5 +8,14 @@
   },
   "devDependencies": {
     "@types/bun": "latest"
+  },
+  "dependencies": {
+    "@lucid-agents/core": "^2.5.0",
+    "@lucid-agents/hono": "^0.9.6",
+    "@lucid-agents/http": "^1.10.2",
+    "@lucid-agents/payments": "^2.5.0",
+    "@lucid-agents/wallet": "^0.6.2",
+    "hono": "^4.12.3",
+    "zod": "^3.25.0-beta.20250519T094321"
   }
 }
