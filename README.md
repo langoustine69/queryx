@@ -4,6 +4,11 @@
 
 **5-14x cheaper than Perplexity. Native x402 payments. Zero friction for agents.**
 
+## Docs
+- [OpenAPI](openapi.json)
+- [Agent Guide](docs/AGENT_GUIDE.md)
+- [Pricing](docs/PRICING.md)
+
 ## Endpoints
 
 | Endpoint | Price | Description |
