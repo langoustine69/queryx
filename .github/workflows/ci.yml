@@ -1,0 +1,55 @@
+# CI pipeline: runs on every push to main and all PRs
+# Installs Bun, runs tests, and type-checks before any deploy
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test & Type-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Use official Bun setup action for fast, cached installs
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run tests
+        run: bun test
+
+      # Type-check without emitting files to catch TS errors in CI
+      - name: Type check
+        run: bun run tsc --noEmit
+
+  deploy:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+    needs: test
+    # Only deploy on pushes to main, never on PRs
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Install Railway CLI and deploy using the RAILWAY_TOKEN secret
+      # Set RAILWAY_TOKEN in GitHub repo Settings > Secrets > Actions
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        run: railway up --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
