@@ -1,215 +1,309 @@
-import { SearchResult } from "./types";
+import type { SearchResult } from "./brave";
 
-export interface SynthTokens {
+export interface SynthesisTokens {
   in: number;
   out: number;
 }
 
-export interface SynthResult {
+export interface SynthesisResult {
   answer: string;
   confidence: number;
-  tokens: SynthTokens;
+  tokens: SynthesisTokens;
   model: string;
 }
 
-export interface SynthOptions {
-  model?: string;
-  signal?: AbortSignal;
+export interface SynthesisOptions {
   apiKey?: string;
-  baseUrl?: string;
-}
-
-interface ChatCompletionResponse {
+  endpoint?: string;
   model?: string;
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-  };
+  timeoutMs?: number;
+  temperature?: number;
+  signal?: AbortSignal;
 }
 
-const SYSTEM_PROMPT = [
-  "You are Queryx synthesis for agent consumers.",
-  "Return STRICT JSON only with shape:",
-  '{"answer":"string","confidence":0.0}',
-  "Keep the answer concise, factual, and directly useful for downstream automation.",
-  "Confidence must be a number between 0 and 1 based on evidence quality and source agreement.",
-].join(" ");
+export type SynthesisErrorCode =
+  | "CONFIGURATION_ERROR"
+  | "BAD_REQUEST"
+  | "UNAUTHORIZED"
+  | "RATE_LIMITED"
+  | "UPSTREAM_ERROR"
+  | "TIMEOUT"
+  | "NETWORK_ERROR"
+  | "INVALID_RESPONSE";
 
-export class SynthError extends Error {
-  status?: number;
-  cause?: unknown;
+export class SynthesisError extends Error {
+  readonly status: number;
+  readonly code: SynthesisErrorCode;
+  readonly details?: unknown;
 
-  constructor(message: string, status?: number, cause?: unknown) {
+  constructor(
+    message: string,
+    options: { status: number; code: SynthesisErrorCode; details?: unknown },
+  ) {
     super(message);
-    this.name = "SynthError";
-    this.status = status;
-    this.cause = cause;
+    this.name = "SynthesisError";
+    this.status = options.status;
+    this.code = options.code;
+    this.details = options.details;
   }
 }
 
-export function clampConfidence(value: number): number {
+const DEFAULT_MODEL = "gpt-4o-mini";
+
+const SYSTEM_PROMPT = [
+  "You are a synthesis engine for downstream agents.",
+  "Return strict JSON only with this schema:",
+  '{"answer":"string","confidence":0..1}',
+  "Rules:",
+  "- concise, factual, no fluff",
+  "- mention uncertainty briefly when evidence is weak",
+  "- confidence must reflect source support and consistency",
+].join("\n");
+
+function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  if (value < 0) return 0;
-  if (value > 1) return 1;
-  return value;
+  return Math.max(0, Math.min(1, value));
 }
 
-export function computeConfidence(query: string, results: SearchResult[], answer: string): number {
-  const evidenceDepth = Math.min(results.length / 8, 1);
-  const sourceDiversity = Math.min(new Set(results.map((r) => r.domain)).size / 5, 1);
-  const answerLength = Math.min(answer.trim().split(/\s+/).filter(Boolean).length / 80, 1);
-
-  const uncertaintyPenalty =
-    /unclear|unknown|insufficient|not enough|cannot determine/i.test(answer) ? 0.2 : 0;
-
-  const score = 0.5 * evidenceDepth + 0.3 * sourceDiversity + 0.2 * answerLength - uncertaintyPenalty;
-  void query;
-  return clampConfidence(score);
+function normalizeText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
-function estimateTokens(text: string): number {
+function estimateTokenCount(text: string): number {
   const cleaned = text.trim();
   if (!cleaned) return 0;
   return Math.max(1, Math.ceil(cleaned.length / 4));
 }
 
-function buildUserPrompt(query: string, results: SearchResult[]): string {
-  const compact = results.slice(0, 8).map((r) => ({
-    title: r.title,
-    url: r.url,
-    snippet: r.snippet,
-    domain: r.domain,
-    publishedAt: r.publishedAt,
-  }));
-
-  return JSON.stringify({
-    query,
-    results: compact,
-    instruction: "Synthesize an answer for agents. No markdown. JSON only.",
-  });
+function buildSourceBlock(results: SearchResult[]): string {
+  return results
+    .slice(0, 10)
+    .map((result, index) => {
+      return [
+        `[${index + 1}] ${normalizeText(result.title)}`,
+        `URL: ${result.url}`,
+        `Domain: ${result.domain}`,
+        `Snippet: ${normalizeText(result.description || "")}`,
+        result.publishedAt ? `Published: ${result.publishedAt}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
 }
 
-function parseJsonObject(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
+function extractMessageContent(payload: unknown): string {
+  const content = (payload as { choices?: Array<{ message?: { content?: unknown } }> })
+    ?.choices?.[0]?.message?.content;
+
+  if (typeof content === "string") return content;
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object" && "text" in part) {
+          const text = (part as { text?: unknown }).text;
+          return typeof text === "string" ? text : "";
+        }
+        return "";
+      })
+      .join("");
+  }
+
+  return "";
+}
+
+function parseJsonObject(raw: string): Record<string, unknown> {
+  const trimmed = raw.trim();
+  if (!trimmed) return {};
 
   try {
-    const direct = JSON.parse(trimmed);
-    if (direct && typeof direct === "object") return direct as Record<string, unknown>;
-    return null;
+    return JSON.parse(trimmed) as Record<string, unknown>;
   } catch {
     const match = trimmed.match(/\{[\s\S]*\}/);
-    if (!match) return null;
+    if (!match) return {};
     try {
-      const parsed = JSON.parse(match[0]);
-      if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
-      return null;
+      return JSON.parse(match[0]) as Record<string, unknown>;
     } catch {
-      return null;
+      return {};
     }
   }
 }
 
-async function readErrorMessage(res: Response): Promise<string> {
-  const text = await res.text();
-  if (!text) return `Synthesis API error (${res.status})`;
+async function parseErrorDetails(response: Response): Promise<unknown> {
+  const contentType = response.headers.get("content-type") ?? "";
   try {
-    const parsed = JSON.parse(text) as { error?: { message?: string }; message?: string };
-    return parsed.error?.message ?? parsed.message ?? text;
+    if (contentType.includes("application/json")) return await response.json();
+    const text = await response.text();
+    return text || undefined;
   } catch {
-    return text;
+    return undefined;
   }
 }
 
-export async function synthesize(query: string, results: SearchResult[], options: SynthOptions = {}): Promise<SynthResult> {
-  const normalizedQuery = query.trim();
-  if (!normalizedQuery) {
-    return {
-      answer: "",
-      confidence: 0,
-      tokens: { in: 0, out: 0 },
-      model: options.model ?? process.env.SYNTH_MODEL ?? "gpt-4o-mini",
-    };
-  }
-
+export async function synthesizeAnswer(
+  query: string,
+  results: SearchResult[],
+  options: SynthesisOptions = {},
+): Promise<SynthesisResult> {
   const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new SynthError("Missing OPENAI_API_KEY");
+    throw new SynthesisError("Missing OpenAI API key", {
+      status: 500,
+      code: "CONFIGURATION_ERROR",
+    });
   }
 
-  const model = options.model ?? process.env.SYNTH_MODEL ?? "gpt-4o-mini";
-  const baseUrl = (options.baseUrl ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/+$/, "");
-  const userPrompt = buildUserPrompt(normalizedQuery, results);
+  const endpoint = options.endpoint ?? process.env.OPENAI_CHAT_COMPLETIONS_ENDPOINT;
+  if (!endpoint) {
+    throw new SynthesisError("Missing OpenAI completions endpoint", {
+      status: 500,
+      code: "CONFIGURATION_ERROR",
+    });
+  }
 
-  let res: Response;
+  const model = options.model ?? DEFAULT_MODEL;
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  const temperature = options.temperature ?? 0.2;
+
+  const sourceBlock = buildSourceBlock(results);
+  const userPrompt = [
+    `Query: ${normalizeText(query)}`,
+    "",
+    "Sources:",
+    sourceBlock || "(no sources)",
+    "",
+    "Return JSON only.",
+  ].join("\n");
+
+  const body = {
+    model,
+    temperature,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+  };
+
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+  if (options.signal) {
+    if (options.signal.aborted) controller.abort();
+    options.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+
   try {
-    res = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(endpoint, {
       method: "POST",
-      signal: options.signal,
       headers: {
-        "Content-Type": "application/json",
+        "content-type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
-      }),
+      body: JSON.stringify(body),
+      signal: controller.signal,
     });
+
+    if (!response.ok) {
+      const details = await parseErrorDetails(response);
+
+      if (response.status === 400) {
+        throw new SynthesisError("Synthesis request rejected", {
+          status: 400,
+          code: "BAD_REQUEST",
+          details,
+        });
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        throw new SynthesisError("Synthesis unauthorized", {
+          status: response.status,
+          code: "UNAUTHORIZED",
+          details,
+        });
+      }
+
+      if (response.status === 429) {
+        throw new SynthesisError("Synthesis rate limited", {
+          status: 429,
+          code: "RATE_LIMITED",
+          details,
+        });
+      }
+
+      throw new SynthesisError("Synthesis upstream error", {
+        status: response.status,
+        code: "UPSTREAM_ERROR",
+        details,
+      });
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new SynthesisError("Invalid JSON from synthesis model", {
+        status: 502,
+        code: "INVALID_RESPONSE",
+      });
+    }
+
+    const rawContent = extractMessageContent(payload);
+    const parsed = parseJsonObject(rawContent);
+
+    const answerRaw =
+      typeof parsed.answer === "string" && parsed.answer.trim()
+        ? parsed.answer
+        : "Insufficient evidence in retrieved sources.";
+
+    const confidenceRaw =
+      typeof parsed.confidence === "number"
+        ? parsed.confidence
+        : Number.parseFloat(String(parsed.confidence ?? "0"));
+
+    const confidence = clamp01(confidenceRaw);
+
+    const usage = payload as {
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      model?: string;
+    };
+
+    const inTokens =
+      typeof usage.usage?.prompt_tokens === "number"
+        ? usage.usage.prompt_tokens
+        : estimateTokenCount(`${SYSTEM_PROMPT}\n${userPrompt}`);
+
+    const outTokens =
+      typeof usage.usage?.completion_tokens === "number"
+        ? usage.usage.completion_tokens
+        : estimateTokenCount(answerRaw);
+
+    return {
+      answer: normalizeText(answerRaw),
+      confidence,
+      tokens: { in: Math.max(0, inTokens), out: Math.max(0, outTokens) },
+      model: usage.model ?? model,
+    };
   } catch (error) {
-    throw new SynthError("Network error while calling synthesis model", undefined, error);
+    if (error instanceof SynthesisError) throw error;
+
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new SynthesisError("Synthesis request timed out", {
+        status: 504,
+        code: "TIMEOUT",
+      });
+    }
+
+    throw new SynthesisError("Synthesis network error", {
+      status: 502,
+      code: "NETWORK_ERROR",
+      details: error,
+    });
+  } finally {
+    clearTimeout(timeoutHandle);
   }
-
-  if (!res.ok) {
-    const message = await readErrorMessage(res);
-    throw new SynthError(message, res.status);
-  }
-
-  let payload: ChatCompletionResponse;
-  try {
-    payload = (await res.json()) as ChatCompletionResponse;
-  } catch (error) {
-    throw new SynthError("Invalid JSON from synthesis model", res.status, error);
-  }
-
-  const content = payload.choices?.[0]?.message?.content?.trim() ?? "";
-  const parsed = parseJsonObject(content);
-
-  const answer =
-    typeof parsed?.answer === "string"
-      ? parsed.answer.trim()
-      : content;
-
-  const parsedConfidence =
-    typeof parsed?.confidence === "number" ? parsed.confidence : undefined;
-
-  const confidence = clampConfidence(
-    parsedConfidence ?? computeConfidence(normalizedQuery, results, answer),
-  );
-
-  const inTokens = payload.usage?.prompt_tokens ?? estimateTokens(`${SYSTEM_PROMPT}\n${userPrompt}`);
-  const outTokens = payload.usage?.completion_tokens ?? estimateTokens(answer);
-
-  return {
-    answer,
-    confidence,
-    tokens: {
-      in: Math.max(0, Math.round(inTokens)),
-      out: Math.max(0, Math.round(outTokens)),
-    },
-    model: payload.model ?? model,
-  };
 }
 
-export const synth = synthesize;
-export default synthesize;
+export type { SearchResult };

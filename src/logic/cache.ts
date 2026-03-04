@@ -3,9 +3,14 @@ import { createHash } from "node:crypto";
 export interface CacheStats {
   hits: number;
   misses: number;
+  requests: number;
   hitRate: number;
   size: number;
   ttlSeconds: number;
+}
+
+export interface CacheOptions {
+  ttlSeconds?: number;
 }
 
 interface CacheEntry<T> {
@@ -13,36 +18,57 @@ interface CacheEntry<T> {
   expiresAt: number;
 }
 
-function parseTtlSeconds(raw: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(raw ?? "", 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return parsed;
-}
+const DEFAULT_TTL_SECONDS = 300;
 
 export function normalizeQuery(query: string): string {
   return query.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-export function hashQuery(query: string): string {
-  const normalized = normalizeQuery(query);
-  return createHash("sha256").update(normalized).digest("hex");
+export function hashQuery(normalizedQuery: string): string {
+  return createHash("sha256").update(normalizedQuery).digest("hex");
 }
 
-export class InMemoryTTLCache<T> {
-  private readonly ttlMs: number;
-  private readonly ttlSeconds: number;
+export function makeCacheKey(query: string): string {
+  return hashQuery(normalizeQuery(query));
+}
+
+export function getDefaultCacheTtlSeconds(): number {
+  const raw = process.env.CACHE_TTL_SECONDS;
+  const parsed = raw ? Number(raw) : NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_TTL_SECONDS;
+  return parsed;
+}
+
+function sanitizeTtl(ttlSeconds: number): number {
+  if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) return DEFAULT_TTL_SECONDS;
+  return ttlSeconds;
+}
+
+export class QueryCache<T> {
   private readonly store = new Map<string, CacheEntry<T>>();
   private hits = 0;
   private misses = 0;
+  private readonly ttlSeconds: number;
 
-  constructor(ttlSeconds = 300) {
-    this.ttlSeconds = ttlSeconds;
-    this.ttlMs = ttlSeconds * 1000;
+  constructor(options: CacheOptions = {}) {
+    this.ttlSeconds = sanitizeTtl(options.ttlSeconds ?? getDefaultCacheTtlSeconds());
+  }
+
+  private pruneExpired(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.store.entries()) {
+      if (entry.expiresAt <= now) {
+        this.store.delete(key);
+      }
+    }
   }
 
   get(query: string): T | undefined {
-    this.pruneExpired();
-    const key = hashQuery(query);
+    return this.getByKey(makeCacheKey(query));
+  }
+
+  getByKey(key: string): T | undefined {
+    const now = Date.now();
     const entry = this.store.get(key);
 
     if (!entry) {
@@ -50,7 +76,7 @@ export class InMemoryTTLCache<T> {
       return undefined;
     }
 
-    if (entry.expiresAt <= Date.now()) {
+    if (entry.expiresAt <= now) {
       this.store.delete(key);
       this.misses += 1;
       return undefined;
@@ -60,24 +86,26 @@ export class InMemoryTTLCache<T> {
     return entry.value;
   }
 
-  set(query: string, value: T): string {
-    this.pruneExpired();
-    const key = hashQuery(query);
-    this.store.set(key, {
-      value,
-      expiresAt: Date.now() + this.ttlMs,
-    });
+  set(query: string, value: T, ttlSeconds?: number): string {
+    const key = makeCacheKey(query);
+    this.setByKey(key, value, ttlSeconds);
     return key;
+  }
+
+  setByKey(key: string, value: T, ttlSeconds?: number): void {
+    const effectiveTtl = sanitizeTtl(ttlSeconds ?? this.ttlSeconds);
+    const expiresAt = Date.now() + effectiveTtl * 1000;
+    this.store.set(key, { value, expiresAt });
   }
 
   stats(): CacheStats {
     this.pruneExpired();
-    const total = this.hits + this.misses;
-
+    const requests = this.hits + this.misses;
     return {
       hits: this.hits,
       misses: this.misses,
-      hitRate: total === 0 ? 0 : this.hits / total,
+      requests,
+      hitRate: requests === 0 ? 0 : this.hits / requests,
       size: this.store.size,
       ttlSeconds: this.ttlSeconds,
     };
@@ -88,39 +116,6 @@ export class InMemoryTTLCache<T> {
     this.hits = 0;
     this.misses = 0;
   }
-
-  private pruneExpired(): void {
-    const now = Date.now();
-    for (const [key, value] of this.store.entries()) {
-      if (value.expiresAt <= now) {
-        this.store.delete(key);
-      }
-    }
-  }
 }
 
-export function createCache<T>(ttlSeconds = parseTtlSeconds(process.env.CACHE_TTL_SECONDS, 300)): InMemoryTTLCache<T> {
-  return new InMemoryTTLCache<T>(ttlSeconds);
-}
-
-const defaultCache = createCache<unknown>();
-
-export function get<T = unknown>(query: string): T | undefined {
-  return defaultCache.get(query) as T | undefined;
-}
-
-export function set<T = unknown>(query: string, value: T): string {
-  return defaultCache.set(query, value);
-}
-
-export function stats(): CacheStats {
-  return defaultCache.stats();
-}
-
-export default {
-  get,
-  set,
-  stats,
-  normalizeQuery,
-  hashQuery,
-};
+export const cache = new QueryCache<unknown>();
