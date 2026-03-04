@@ -1,6 +1,6 @@
-# Queryx 🔍
+# Queryx 🔍 [![CI](https://github.com/langoustine69/queryx/workflows/CI/badge.svg)](https://github.com/langoustine69/queryx/actions)
 
-> Agent-native search API. Pay per query in USDC via x402. No accounts. No subscriptions. Structured JSON.
+&gt; Agent-native search API. Pay per query in USDC via x402. No accounts. No subscriptions. Structured JSON.
 
 **5-14x cheaper than Perplexity. Native x402 payments. Zero friction for agents.**
 
@@ -16,8 +16,8 @@
 ## Quick Start (agent)
 
 ```bash
-curl -H "PAYMENT-SIGNATURE: <x402-sig>" \
-  "https://queryx.run/v1/search?q=Fed+rate+decision+impact+on+tech+stocks"
+curl -H &quot;PAYMENT-SIGNATURE: &lt;x402-sig&gt;&quot; \
+  &quot;https://queryx.run/v1/search?q=Fed+rate+decision+impact+on+tech+stocks&quot;
 ```
 
 ## Stack
