@@ -3,125 +3,181 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Queryx — Agent-native search API</title>
+    <title>Queryx — Agent-native Search API</title>
     <meta
       name="description"
-      content="Queryx is an agent-native search API with x402 payments on Base. Search the web, pay per query, no accounts."
+      content="Queryx is an agent-native search API with x402 micropayments on Base. Pay per query, no accounts, structured JSON."
     />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <header class="section hero">
-      <div class="container">
-        <p class="badge">Agent-native search API</p>
-        <h1>Search the web. Pay per query. No accounts.</h1>
-        <p class="subheadline">
-          Queryx uses x402 on Base for instant micropayments. Start at $0.001/query with structured JSON output built for agents.
-        </p>
+    <header class="site-header">
+      <div class="container row">
+        <a class="brand" href="#top" aria-label="Queryx home">Queryx</a>
+        <a
+          class="ghost-link"
+          href="https://github.com/langoustine69/queryx"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GitHub
+        </a>
       </div>
     </header>
 
-    <main>
-      <section class="section" id="pricing" aria-labelledby="pricing-title">
-        <div class="container">
-          <h2 id="pricing-title">Simple endpoint pricing</h2>
-          <div class="pricing-grid">
-            <article class="card pricing-card" aria-label="/v1/search pricing">
-              <p class="endpoint">/v1/search</p>
-              <p class="price">$0.001 <span>/ query</span></p>
-              <p class="comparison">Competitors: Perplexity $0.005–$0.014 · Tavily $0.004</p>
-            </article>
-
-            <article class="card pricing-card" aria-label="/v1/search/news pricing">
-              <p class="endpoint">/v1/search/news</p>
-              <p class="price">$0.001 <span>/ query</span></p>
-              <p class="comparison">Competitors: Perplexity $0.005–$0.014 · Tavily $0.004</p>
-            </article>
-
-            <article class="card pricing-card featured" aria-label="/v1/search/deep pricing">
-              <p class="endpoint">/v1/search/deep</p>
-              <p class="price">$0.005 <span>/ query</span></p>
-              <p class="comparison">Competitors: Perplexity $0.005–$0.014 · Tavily $0.004</p>
-            </article>
+    <main id="top">
+      <section class="hero section">
+        <div class="container hero-content">
+          <p class="eyebrow">Agent-native search API</p>
+          <h1>Search the web. Pay per query. No accounts.</h1>
+          <p class="subheadline">
+            Built for agents with x402 micropayments on Base. Start at
+            <strong>$0.001/query</strong> for structured, reliable web search.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#pricing">View pricing</a>
+            <a class="btn btn-secondary" href="#quickstart">Quick start</a>
           </div>
         </div>
       </section>
 
-      <section class="section" id="quick-start" aria-labelledby="quick-start-title">
+      <section id="pricing" class="section">
         <div class="container">
-          <h2 id="quick-start-title">Quick start</h2>
+          <h2>Pricing</h2>
+          <p class="section-copy">Simple endpoint pricing with no subscription lock-in.</p>
+
+          <div class="pricing-grid">
+            <article class="card endpoint-card">
+              <p class="endpoint">/v1/search</p>
+              <p class="price">$0.001</p>
+              <p class="unit">per query</p>
+              <p class="comparison">
+                Lower than Perplexity ($0.005–$0.014) and Tavily ($0.004)
+              </p>
+            </article>
+
+            <article class="card endpoint-card">
+              <p class="endpoint">/v1/search/news</p>
+              <p class="price">$0.001</p>
+              <p class="unit">per query</p>
+              <p class="comparison">
+                Lower than Perplexity ($0.005–$0.014) and Tavily ($0.004)
+              </p>
+            </article>
+
+            <article class="card endpoint-card featured">
+              <p class="endpoint">/v1/search/deep</p>
+              <p class="price">$0.005</p>
+              <p class="unit">per query</p>
+              <p class="comparison">
+                Matches or beats Perplexity high-tier ($0.005–$0.014), near Tavily ($0.004)
+              </p>
+            </article>
+          </div>
+
+          <div class="comparison-strip card">
+            <p><span>Competitors:</span> Perplexity $0.005–$0.014, Tavily $0.004</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="quickstart" class="section">
+        <div class="container">
+          <h2>Quick start</h2>
+          <p class="section-copy">Send a query and receive structured JSON immediately.</p>
+
           <div class="card code-card">
-            <pre><code>curl -sS https://api.queryx.xyz/v1/search \
-  -H "Content-Type: application/json" \
-  -H "X402-Payment: &lt;base-signed-payment-token&gt;" \
+            <pre aria-label="curl example"><code>curl -X POST "https://api.queryx.ai/v1/search" \
+  -H "content-type: application/json" \
+  -H "x402-payment: &lt;signed_payment_on_base&gt;" \
   -d '{
-    "q": "best lightweight llm eval libraries",
-    "limit": 5
+    "query": "latest L2 throughput benchmarks",
+    "top_k": 5
   }'</code></pre>
 
-            <details class="response">
-              <summary>Show sample JSON response</summary>
-              <pre><code>{
-  "query": "best lightweight llm eval libraries",
+            <button
+              id="toggleResponse"
+              class="btn btn-secondary small"
+              type="button"
+              aria-expanded="false"
+              aria-controls="responseBlock"
+            >
+              Show JSON response
+            </button>
+
+            <pre id="responseBlock" class="response-block" hidden><code>{
+  "query": "latest L2 throughput benchmarks",
   "results": [
     {
-      "title": "LangSmith Evals",
-      "url": "https://example.com/langsmith-evals",
-      "snippet": "Flexible eval primitives for LLM applications."
-    },
-    {
-      "title": "OpenEvals",
-      "url": "https://example.com/openevals",
-      "snippet": "Open-source toolkit for lightweight evaluation runs."
+      "title": "Benchmark roundup",
+      "url": "https://example.com/benchmark-roundup",
+      "snippet": "A comparative report on rollup performance...",
+      "source": "web",
+      "published_at": "2026-02-10T14:03:00Z"
     }
   ],
-  "usage": {
-    "endpoint": "/v1/search",
-    "cost_usd": 0.001,
-    "payment_method": "x402",
-    "network": "base"
-  },
-  "took_ms": 184
+  "total_results": 1
 }</code></pre>
-            </details>
           </div>
         </div>
       </section>
 
-      <section class="section" id="how-it-works" aria-labelledby="how-title">
+      <section id="how" class="section">
         <div class="container">
-          <h2 id="how-title">How it works</h2>
-          <div class="steps">
+          <h2>How it works</h2>
+          <div class="steps-grid">
             <article class="card step">
-              <p class="step-num">1</p>
+              <p class="step-number">1</p>
               <h3>Query</h3>
-              <p>Send your search prompt to a Queryx endpoint.</p>
+              <p>Your agent calls a Queryx endpoint with the search prompt.</p>
             </article>
             <article class="card step">
-              <p class="step-num">2</p>
+              <p class="step-number">2</p>
               <h3>x402 payment on Base</h3>
-              <p>Attach payment proof through x402. No account signup required.</p>
+              <p>Per-request micropayment is validated via x402 on Base.</p>
             </article>
             <article class="card step">
-              <p class="step-num">3</p>
+              <p class="step-number">3</p>
               <h3>Structured JSON</h3>
-              <p>Get normalized, agent-ready search results back in milliseconds.</p>
+              <p>Receive normalized, model-friendly JSON results instantly.</p>
             </article>
           </div>
         </div>
       </section>
     </main>
 
-    <footer class="section footer">
-      <div class="container footer-inner">
-        <a href="https://github.com/langoustine69/queryx" aria-label="Queryx GitHub repository">GitHub</a>
+    <footer class="site-footer">
+      <div class="container footer-row">
+        <a
+          href="https://github.com/langoustine69/queryx"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GitHub
+        </a>
         <p>Built by @langoustine69</p>
-        <p class="muted">© <span id="year"></span> Queryx</p>
       </div>
     </footer>
 
     <script>
-      document.getElementById("year").textContent = new Date().getFullYear();
+      (function () {
+        var toggleBtn = document.getElementById("toggleResponse");
+        var responseBlock = document.getElementById("responseBlock");
+        if (!toggleBtn || !responseBlock) return;
+
+        toggleBtn.addEventListener("click", function () {
+          var isHidden = responseBlock.hasAttribute("hidden");
+          if (isHidden) {
+            responseBlock.removeAttribute("hidden");
+            toggleBtn.setAttribute("aria-expanded", "true");
+            toggleBtn.textContent = "Hide JSON response";
+          } else {
+            responseBlock.setAttribute("hidden", "");
+            toggleBtn.setAttribute("aria-expanded", "false");
+            toggleBtn.textContent = "Show JSON response";
+          }
+        });
+      })();
     </script>
   </body>
 </html>
