@@ -5,6 +5,7 @@ export interface CacheStats {
   misses: number;
   hitRate: number;
   size: number;
+  ttlSeconds: number;
 }
 
 interface CacheEntry<T> {
@@ -12,72 +13,61 @@ interface CacheEntry<T> {
   expiresAt: number;
 }
 
-export interface QueryCacheOptions {
-  ttlSeconds?: number;
-  now?: () => number;
-}
-
-function getDefaultTtlSeconds(): number {
-  const raw = process.env.CACHE_TTL_SECONDS ?? "300";
-  const parsed = Number(raw);
+function parseDefaultTtlSeconds(): number {
+  const raw = process.env.CACHE_TTL_SECONDS;
+  const parsed = raw ? Number(raw) : 300;
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return 300;
   }
   return parsed;
 }
 
-export class QueryCache<T> {
-  private readonly store = new Map<string, CacheEntry<T>>();
-  private readonly now: () => number;
-  private readonly defaultTtlMs: number;
+export function normalizeQuery(query: string): string {
+  return query.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
+}
 
+export function normalizedQueryHash(query: string): string {
+  const normalized = normalizeQuery(query);
+  return createHash("sha256").update(normalized).digest("hex");
+}
+
+export class InMemoryCache<T> {
+  private readonly entries = new Map<string, CacheEntry<T>>();
+  private readonly now: () => number;
+  private readonly defaultTtlSeconds: number;
   private hits = 0;
   private misses = 0;
 
-  constructor(options: QueryCacheOptions = {}) {
-    this.now = options.now ?? Date.now;
-    this.defaultTtlMs = Math.max(1, (options.ttlSeconds ?? getDefaultTtlSeconds()) * 1000);
+  constructor(ttlSeconds: number = parseDefaultTtlSeconds(), now: () => number = () => Date.now()) {
+    this.defaultTtlSeconds = Number.isFinite(ttlSeconds) && ttlSeconds > 0 ? ttlSeconds : 300;
+    this.now = now;
   }
 
-  static normalizeQuery(query: string): string {
-    return query.trim().toLowerCase().replace(/\s+/g, " ");
+  private purgeExpired(): void {
+    const now = this.now();
+    for (const [key, entry] of this.entries) {
+      if (entry.expiresAt <= now) {
+        this.entries.delete(key);
+      }
+    }
   }
 
-  static hashQuery(query: string): string {
-    return createHash("sha256").update(QueryCache.normalizeQuery(query)).digest("hex");
-  }
-
-  public keyForQuery(query: string): string {
-    return QueryCache.hashQuery(query);
-  }
-
-  public set(query: string, value: T, ttlSeconds?: number): string {
-    const key = this.keyForQuery(query);
-    return this.setByKey(key, value, ttlSeconds);
-  }
-
-  public setByKey(key: string, value: T, ttlSeconds?: number): string {
-    const ttlMs = Math.max(1, (ttlSeconds ?? this.defaultTtlMs / 1000) * 1000);
-    this.store.set(key, {
-      value,
-      expiresAt: this.now() + ttlMs,
-    });
-    return key;
+  private keyForQuery(query: string): string {
+    return normalizedQueryHash(query);
   }
 
   public get(query: string): T | undefined {
-    return this.getByKey(this.keyForQuery(query));
-  }
+    this.purgeExpired();
+    const key = this.keyForQuery(query);
+    const entry = this.entries.get(key);
 
-  public getByKey(key: string): T | undefined {
-    const entry = this.store.get(key);
     if (!entry) {
       this.misses += 1;
       return undefined;
     }
 
     if (entry.expiresAt <= this.now()) {
-      this.store.delete(key);
+      this.entries.delete(key);
       this.misses += 1;
       return undefined;
     }
@@ -86,37 +76,34 @@ export class QueryCache<T> {
     return entry.value;
   }
 
-  public delete(query: string): boolean {
-    return this.store.delete(this.keyForQuery(query));
-  }
+  public set(query: string, value: T, ttlSeconds?: number): void {
+    this.purgeExpired();
+    const key = this.keyForQuery(query);
+    const effectiveTtl = Number.isFinite(ttlSeconds) && (ttlSeconds as number) > 0 ? (ttlSeconds as number) : this.defaultTtlSeconds;
+    const expiresAt = this.now() + effectiveTtl * 1000;
 
-  public clear(): void {
-    this.store.clear();
-    this.hits = 0;
-    this.misses = 0;
-  }
-
-  public cleanup(): void {
-    const now = this.now();
-    for (const [key, entry] of this.store.entries()) {
-      if (entry.expiresAt <= now) {
-        this.store.delete(key);
-      }
-    }
+    this.entries.set(key, { value, expiresAt });
   }
 
   public stats(): CacheStats {
-    this.cleanup();
+    this.purgeExpired();
     const total = this.hits + this.misses;
+
     return {
       hits: this.hits,
       misses: this.misses,
       hitRate: total === 0 ? 0 : this.hits / total,
-      size: this.store.size,
+      size: this.entries.size,
+      ttlSeconds: this.defaultTtlSeconds,
     };
+  }
+
+  public clear(): void {
+    this.entries.clear();
+    this.hits = 0;
+    this.misses = 0;
   }
 }
 
-export const cache = new QueryCache<unknown>();
-export const normalizeQuery = QueryCache.normalizeQuery;
-export const hashQuery = QueryCache.hashQuery;
+export const queryCache = new InMemoryCache<unknown>();
+export default queryCache;
