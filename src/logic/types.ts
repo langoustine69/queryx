@@ -4,20 +4,9 @@ export interface SearchResult {
   title: string;
   url: string;
   description: string;
-  domain: string;
   source: string;
+  domain: string;
   publishedAt?: string;
+  favicon?: string;
   score?: number;
-}
-
-export interface TokenUsage {
-  in: number;
-  out: number;
-}
-
-export interface SynthesisResult {
-  answer: string;
-  confidence: number;
-  tokens: TokenUsage;
-  model: string;
 }
