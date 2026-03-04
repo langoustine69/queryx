@@ -1,241 +1,291 @@
-import type { SearchResult, SynthesisResult } from "./types";
+import type { SearchResult } from "./types";
 
-export interface SynthOptions {
+export interface SynthTokens {
+  in: number;
+  out: number;
+}
+
+export interface SynthesisResult {
+  answer: string;
+  confidence: number;
+  tokens: SynthTokens;
+  model: string;
+}
+
+export interface SynthesizeOptions {
+  apiKey?: string;
+  endpoint?: string;
   model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  signal?: AbortSignal;
+  timeoutMs?: number;
+  maxInputResults?: number;
 }
 
 export class SynthError extends Error {
   status: number;
-  body?: string;
+  code: string;
+  details?: unknown;
 
-  constructor(message: string, status = 500, body?: string) {
+  constructor(message: string, status: number, code: string, details?: unknown) {
     super(message);
     this.name = "SynthError";
     this.status = status;
-    this.body = body;
+    this.code = code;
+    this.details = details;
   }
 }
 
-const DEFAULT_MODEL = "gpt-4o-mini";
-const DEFAULT_SYSTEM_PROMPT =
-  "You are Queryx synthesis engine for downstream agents. Respond with strict JSON only: " +
-  '{"answer":"string","confidence":0.0}. ' +
-  "Rules: concise answer, no markdown, no preamble, ground claims in provided sources, " +
-  "state uncertainty when evidence is weak.";
+const DEFAULT_MODEL = process.env.SYNTH_MODEL ?? "gpt-4o-mini";
+const DEFAULT_ENDPOINT =
+  process.env.OPENAI_API_ENDPOINT ?? "https://api.openai.com/v1/chat/completions";
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
+const SYSTEM_PROMPT = [
+  "You are Queryx synthesis engine for downstream agents.",
+  "Answer strictly from provided sources.",
+  "Output strict JSON object only:",
+  '{"answer":"string","confidence":number}',
+  "Rules:",
+  "- Keep answer concise and factual.",
+  "- Include uncertainty when sources are weak.",
+  "- confidence must be between 0 and 1.",
+].join("\n");
 
 export function clampConfidence(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return clamp(value, 0, 1);
+  return Math.max(0, Math.min(1, value));
 }
 
-export function estimateTokens(text: string): number {
-  const length = text.trim().length;
-  if (length === 0) return 1;
-  return Math.max(1, Math.ceil(length / 4));
+export function estimateTokenCount(text: string): number {
+  const cleaned = text.trim();
+  if (!cleaned) return 0;
+  return Math.max(1, Math.ceil(cleaned.length / 4));
 }
 
-function stripCodeFences(text: string): string {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  return fenced ? fenced[1] : text;
+function normalizeDomain(input: string): string {
+  return input.replace(/^www\./i, "").toLowerCase();
 }
 
-function parseModelJSON(content: string): { answer?: string; confidence?: number } {
-  const cleaned = stripCodeFences(content).trim();
-  if (!cleaned) return {};
-
+function domainFromUrl(url: string): string {
   try {
-    return JSON.parse(cleaned);
+    return normalizeDomain(new URL(url).hostname);
   } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(cleaned.slice(start, end + 1));
-      } catch {
-        return {};
-      }
-    }
-    return {};
+    return "";
   }
 }
 
-function extractMessageContent(payload: any): string {
-  const content = payload?.choices?.[0]?.message?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((item) => {
-        if (typeof item === "string") return item;
-        if (typeof item?.text === "string") return item.text;
-        return "";
-      })
-      .join("\n");
-  }
-  return "";
+function isRecent(publishedAt?: string, withinDays = 30): boolean {
+  if (!publishedAt) return false;
+  const ms = Date.parse(publishedAt);
+  if (Number.isNaN(ms)) return false;
+  const ageMs = Date.now() - ms;
+  return ageMs >= 0 && ageMs <= withinDays * 24 * 60 * 60 * 1000;
 }
 
-function fallbackAnswer(results: SearchResult[]): string {
-  if (results.length === 0) {
-    return "Insufficient evidence to answer confidently from current search results.";
+export function computeHeuristicConfidence(results: SearchResult[]): number {
+  if (results.length === 0) return 0.12;
+
+  const capped = results.slice(0, 8);
+  const coverage = Math.min(1, capped.length / 6);
+
+  const domains = new Set<string>();
+  let recentCount = 0;
+  for (const r of capped) {
+    domains.add(normalizeDomain(r.domain || domainFromUrl(r.url)));
+    if (isRecent(r.publishedAt, 30)) recentCount += 1;
   }
 
-  const summary = results
-    .slice(0, 3)
-    .map((r) => (r.snippet?.trim().length ? r.snippet.trim() : r.title.trim()))
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const diversity = Math.min(1, domains.size / Math.max(1, Math.min(capped.length, 4)));
+  const recency = recentCount / capped.length;
 
-  return summary.length > 0
-    ? summary.slice(0, 500)
-    : "Relevant sources were found, but they do not contain enough detail for a confident answer.";
+  return clampConfidence(0.1 + coverage * 0.45 + diversity * 0.25 + recency * 0.2);
 }
 
-export function scoreConfidence(query: string, results: SearchResult[], answer: string): number {
-  let score = 0.1;
-
-  const uniqueDomains = new Set(results.map((r) => r.domain)).size;
-  score += Math.min(0.35, results.length * 0.08);
-  score += Math.min(0.2, uniqueDomains * 0.06);
-
-  if (answer.trim().length >= 80) score += 0.15;
-
-  const hasRecentSource = results.some((r) => {
-    if (!r.publishedAt) return false;
-    const ts = Date.parse(r.publishedAt);
-    if (Number.isNaN(ts)) return false;
-    const daysOld = (Date.now() - ts) / 86_400_000;
-    return daysOld <= 30;
-  });
-  if (hasRecentSource) score += 0.1;
-
-  if (query.trim().length > 0 && answer.toLowerCase().includes(query.trim().split(/\s+/)[0].toLowerCase())) {
-    score += 0.05;
-  }
-
-  return clampConfidence(score);
-}
-
-function buildUserPrompt(query: string, results: SearchResult[]): string {
-  const compactResults = results.slice(0, 8).map((r, index) => ({
-    index: index + 1,
+function buildUserPayload(query: string, results: SearchResult[]): string {
+  const compact = results.map((r, index) => ({
+    id: index + 1,
     title: r.title,
     url: r.url,
     domain: r.domain,
-    snippet: r.snippet,
     publishedAt: r.publishedAt ?? null,
+    snippet: r.description,
   }));
 
   return JSON.stringify(
     {
       query,
-      results: compactResults,
-      instructions: "Return only JSON: {answer: string, confidence: number between 0 and 1}",
+      sources: compact,
+      expected_schema: {
+        answer: "string",
+        confidence: "number 0..1",
+      },
     },
     null,
     2,
   );
 }
 
-async function readResponseTextSafe(response: Response): Promise<string> {
+function extractMessageContent(payload: any): string {
+  const messageContent = payload?.choices?.[0]?.message?.content;
+  if (typeof messageContent === "string") return messageContent;
+
+  if (Array.isArray(messageContent)) {
+    const parts = messageContent
+      .map((part) => {
+        if (!part || typeof part !== "object") return "";
+        if (typeof part.text === "string") return part.text;
+        if (typeof part.content === "string") return part.content;
+        return "";
+      })
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join("\n");
+  }
+
+  if (typeof payload?.output_text === "string") return payload.output_text;
+
+  return "";
+}
+
+function parseAssistantJson(content: string): { answer?: string; confidence?: number } | undefined {
+  const stripped = content
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```/, "")
+    .replace(/```$/, "")
+    .trim();
+
+  const start = stripped.indexOf("{");
+  const end = stripped.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return undefined;
+
+  const jsonSegment = stripped.slice(start, end + 1);
   try {
-    return await response.text();
+    const parsed = JSON.parse(jsonSegment) as { answer?: string; confidence?: number };
+    return parsed;
   } catch {
-    return "";
+    return undefined;
   }
 }
 
-export async function synthesizeAnswer(
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function synthesize(
   query: string,
   results: SearchResult[],
-  options: SynthOptions = {},
+  options: SynthesizeOptions = {},
 ): Promise<SynthesisResult> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new SynthError("Missing OPENAI_API_KEY", 500);
+  const trimmedQuery = query.trim();
+  const limitedResults = results.slice(0, options.maxInputResults ?? 8);
+
+  const heuristicConfidence = computeHeuristicConfidence(limitedResults);
+  if (!trimmedQuery || limitedResults.length === 0) {
+    const answer = "Insufficient evidence in current sources to provide a confident answer.";
+    return {
+      answer,
+      confidence: clampConfidence(heuristicConfidence * 0.8),
+      tokens: {
+        in: estimateTokenCount(trimmedQuery),
+        out: estimateTokenCount(answer),
+      },
+      model: options.model ?? DEFAULT_MODEL,
+    };
   }
 
-  const model = options.model ?? process.env.OPENAI_MODEL ?? DEFAULT_MODEL;
-  const endpoint = process.env.OPENAI_API_URL ?? "https://api.openai.com/v1/chat/completions";
-  const systemPrompt = process.env.SYNTH_SYSTEM_PROMPT ?? DEFAULT_SYSTEM_PROMPT;
-  const userPrompt = buildUserPrompt(query, results);
+  const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new SynthError("Missing synthesis API key", 401, "MISSING_API_KEY");
+  }
 
-  const requestBody = {
-    model,
-    temperature: options.temperature ?? 0.2,
-    max_tokens: options.maxTokens ?? 320,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-  };
+  const endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
+  const model = options.model ?? DEFAULT_MODEL;
+  const timeoutMs = Math.max(1000, options.timeoutMs ?? 20_000);
+
+  const userPayload = buildUserPayload(trimmedQuery, limitedResults);
 
   let response: Response;
   try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    response = await fetchWithTimeout(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userPayload },
+          ],
+        }),
       },
-      body: JSON.stringify(requestBody),
-      signal: options.signal,
-    });
+      timeoutMs,
+    );
   } catch (error) {
-    throw new SynthError(`Synthesis request failed: ${(error as Error)?.message ?? "Unknown error"}`, 500);
+    throw new SynthError(
+      error instanceof Error ? error.message : "Synthesis request failed",
+      0,
+      "NETWORK_ERROR",
+      error,
+    );
+  }
+
+  const rawText = await response.text();
+  let payload: any;
+  try {
+    payload = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    payload = {};
   }
 
   if (!response.ok) {
-    const body = await readResponseTextSafe(response);
-    throw new SynthError(`Synthesis API failed with status ${response.status}`, response.status, body);
+    const message = payload?.error?.message || `Synthesis API error (${response.status})`;
+    throw new SynthError(message, response.status, "UPSTREAM_ERROR", payload);
   }
 
-  let payload: any;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new SynthError("Invalid JSON from synthesis API", response.status);
-  }
+  const rawContent = extractMessageContent(payload);
+  const parsed = parseAssistantJson(rawContent);
 
-  const content = extractMessageContent(payload);
-  const parsed = parseModelJSON(content);
-
-  const answer = typeof parsed.answer === "string" && parsed.answer.trim().length > 0 ? parsed.answer.trim() : fallbackAnswer(results);
+  const answer = (parsed?.answer || rawContent || "").trim() || "No answer produced.";
+  const modelConfidence =
+    typeof parsed?.confidence === "number" ? clampConfidence(parsed.confidence) : undefined;
 
   const confidence =
-    typeof parsed.confidence === "number"
-      ? clampConfidence(parsed.confidence)
-      : scoreConfidence(query, results, answer);
+    modelConfidence === undefined
+      ? heuristicConfidence
+      : clampConfidence(modelConfidence * 0.7 + heuristicConfidence * 0.3);
 
-  const promptTokens =
-    typeof payload?.usage?.prompt_tokens === "number"
-      ? payload.usage.prompt_tokens
-      : estimateTokens(systemPrompt) + estimateTokens(userPrompt);
-
-  const completionTokens =
-    typeof payload?.usage?.completion_tokens === "number"
-      ? payload.usage.completion_tokens
-      : estimateTokens(content || answer);
+  const inputTextForEstimate = `${SYSTEM_PROMPT}\n${userPayload}`;
+  const inTokens = Number(payload?.usage?.prompt_tokens) || estimateTokenCount(inputTextForEstimate);
+  const outTokens = Number(payload?.usage?.completion_tokens) || estimateTokenCount(answer);
 
   return {
     answer,
-    confidence,
+    confidence: clampConfidence(confidence),
     tokens: {
-      in: promptTokens,
-      out: completionTokens,
+      in: Math.max(0, inTokens),
+      out: Math.max(0, outTokens),
     },
-    model: typeof payload?.model === "string" && payload.model.length > 0 ? payload.model : model,
+    model: typeof payload?.model === "string" ? payload.model : model,
   };
 }
 
-export const synthesize = synthesizeAnswer;
-export const synth = synthesizeAnswer;
-export default synthesizeAnswer;
+export type { SearchResult };
+export default synthesize;
