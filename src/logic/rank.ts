@@ -1,163 +1,133 @@
-import type { SearchResult } from "./types";
+import type { SearchResult } from "./brave";
 
 export interface RankOptions {
   maxPerDomain?: number;
-  minSnippetLength?: number;
-  minTitleLength?: number;
+  maxResults?: number;
+  minQualityScore?: number;
   now?: Date;
 }
 
-const TRACKING_PARAM_EXACT = new Set([
-  "fbclid",
-  "gclid",
-  "ref",
-  "source",
-  "mc_cid",
-  "mc_eid",
-]);
-
-function extractDomain(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname.toLowerCase();
-  } catch {
-    return null;
-  }
+export interface RankedSearchResult extends SearchResult {
+  rankScore: number;
 }
 
-function canonicalizeUrl(url: string): string | null {
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function canonicalUrl(rawUrl: string): string {
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return null;
-    }
-
-    parsed.hash = "";
-
-    const keys = [...parsed.searchParams.keys()];
-    for (const key of keys) {
-      const lower = key.toLowerCase();
-      if (lower.startsWith("utm_") || TRACKING_PARAM_EXACT.has(lower)) {
-        parsed.searchParams.delete(key);
+    const url = new URL(rawUrl);
+    url.hash = "";
+    for (const key of [...url.searchParams.keys()]) {
+      const k = key.toLowerCase();
+      if (k.startsWith("utm_") || k === "fbclid" || k === "gclid" || k === "ref") {
+        url.searchParams.delete(key);
       }
     }
-
-    parsed.pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-
-    const query = parsed.searchParams.toString();
-    return `${parsed.protocol}//${parsed.host}${parsed.pathname}${query ? `?${query}` : ""}`;
+    url.pathname = url.pathname.replace(/\/+$/g, "") || "/";
+    return url.toString();
   } catch {
-    return null;
+    return rawUrl.trim();
   }
 }
 
-function toTimestamp(value?: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
+function recencyBoost(publishedAt: string | undefined, now: Date): number {
+  if (!publishedAt) return 0;
+  const date = new Date(publishedAt);
+  if (Number.isNaN(date.getTime())) return 0;
 
-function recencyBoost(publishedAt: string | null | undefined, now: Date): number {
-  const ts = toTimestamp(publishedAt);
-  if (ts === null) return 0;
-
-  const ageMs = Math.max(0, now.getTime() - ts);
-  const days = ageMs / (1000 * 60 * 60 * 24);
-
-  if (days <= 1) return 0.35;
-  if (days <= 7) return 0.25;
-  if (days <= 30) return 0.15;
-  if (days <= 90) return 0.08;
-  if (days <= 365) return 0.03;
+  const ageMs = now.getTime() - date.getTime();
+  if (ageMs < 0) return 0.3;
+  const day = 24 * 60 * 60 * 1000;
+  if (ageMs <= day) return 0.35;
+  if (ageMs <= 7 * day) return 0.22;
+  if (ageMs <= 30 * day) return 0.12;
+  if (ageMs <= 180 * day) return 0.05;
   return 0;
 }
 
-function qualityScore(result: SearchResult): number {
-  const titleLen = result.title.trim().length;
-  const snippetLen = result.snippet.trim().length;
+function isLowQuality(result: SearchResult): boolean {
+  if (!result.url || !result.domain) return true;
+  const title = result.title?.trim() ?? "";
+  const snippet = result.snippet?.trim() ?? "";
 
-  const titleScore = Math.min(120, titleLen) / 120 * 0.3;
-  const snippetScore = Math.min(320, snippetLen) / 320 * 0.45;
-  const httpsBoost = result.url.startsWith("https://") ? 0.05 : 0;
-  const authorityBoost = /\.(gov|edu)$/.test(result.domain) ? 0.05 : 0;
+  if (title.length < 8) return true;
+  if (snippet.length < 20) return true;
 
-  return titleScore + snippetScore + httpsBoost + authorityBoost;
+  return false;
 }
 
-function isLowQuality(
-  result: SearchResult,
-  minTitleLength: number,
-  minSnippetLength: number,
-): boolean {
-  if (!result.title || !result.url) return true;
-  if (result.title.trim().length < minTitleLength) return true;
-  if (result.snippet.trim().length < minSnippetLength) return true;
-  return canonicalizeUrl(result.url) === null;
+function qualityScore(result: SearchResult, now: Date): number {
+  const titleLen = (result.title ?? "").trim().length;
+  const snippetLen = (result.snippet ?? "").trim().length;
+  const titleScore = Math.min(titleLen, 120) / 120 * 0.35;
+  const snippetScore = Math.min(snippetLen, 300) / 300 * 0.45;
+  const sourceScore = result.domain ? 0.1 : 0;
+  const explicitScore = clamp01(Number(result.score ?? 0)) * 0.2;
+  const freshness = recencyBoost(result.publishedAt, now);
+  return titleScore + snippetScore + sourceScore + explicitScore + freshness;
 }
 
-function pickPreferred(existing: SearchResult, incoming: SearchResult): SearchResult {
-  const existingTs = toTimestamp(existing.publishedAt ?? null) ?? 0;
-  const incomingTs = toTimestamp(incoming.publishedAt ?? null) ?? 0;
-
-  if (incomingTs > existingTs) return incoming;
-  if (incomingTs < existingTs) return existing;
-
-  return incoming.snippet.length > existing.snippet.length ? incoming : existing;
-}
-
-export function rankResults(results: SearchResult[], options: RankOptions = {}): SearchResult[] {
-  if (!Array.isArray(results) || results.length === 0) return [];
-
-  const now = options.now ?? new Date();
+export function rankSearchResults(
+  results: SearchResult[],
+  options: RankOptions = {}
+): SearchResult[] {
   const maxPerDomain = options.maxPerDomain ?? 2;
-  const minSnippetLength = options.minSnippetLength ?? 40;
-  const minTitleLength = options.minTitleLength ?? 8;
+  const maxResults = options.maxResults ?? 10;
+  const minQualityScore = options.minQualityScore ?? 0.25;
+  const now = options.now ?? new Date();
 
-  const byCanonicalUrl = new Map<string, SearchResult>();
+  const seenUrls = new Set<string>();
+  const seenTitleDomain = new Set<string>();
+  const ranked: RankedSearchResult[] = [];
 
   for (const result of results) {
-    if (isLowQuality(result, minTitleLength, minSnippetLength)) continue;
+    const canonical = canonicalUrl(result.url);
+    if (seenUrls.has(canonical)) continue;
+    seenUrls.add(canonical);
 
-    const canonicalUrl = canonicalizeUrl(result.url);
-    if (!canonicalUrl) continue;
+    const titleDomainKey = `${result.domain}|${result.title.trim().toLowerCase()}`;
+    if (seenTitleDomain.has(titleDomainKey)) continue;
+    seenTitleDomain.add(titleDomainKey);
 
-    const domain = (result.domain || extractDomain(canonicalUrl) || "").toLowerCase();
-    if (!domain) continue;
+    if (isLowQuality(result)) continue;
 
-    const normalized: SearchResult = {
+    const rankScore = qualityScore(result, now);
+    if (rankScore < minQualityScore) continue;
+
+    ranked.push({
       ...result,
-      url: canonicalUrl,
-      domain,
-    };
-
-    const existing = byCanonicalUrl.get(canonicalUrl);
-    if (!existing) {
-      byCanonicalUrl.set(canonicalUrl, normalized);
-    } else {
-      byCanonicalUrl.set(canonicalUrl, pickPreferred(existing, normalized));
-    }
+      rankScore,
+    });
   }
 
-  const scored = [...byCanonicalUrl.values()]
-    .map((result) => ({
-      ...result,
-      score: qualityScore(result) + recencyBoost(result.publishedAt, now),
-    }))
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  ranked.sort((a, b) => {
+    if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore;
+    const ad = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+    const bd = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+    return bd - ad;
+  });
 
-  const domainCounts = new Map<string, number>();
-  const ranked: SearchResult[] = [];
+  const perDomain = new Map<string, number>();
+  const output: SearchResult[] = [];
 
-  for (const result of scored) {
-    const count = domainCounts.get(result.domain) ?? 0;
-    if (count >= maxPerDomain) continue;
-    domainCounts.set(result.domain, count + 1);
-    ranked.push(result);
+  for (const item of ranked) {
+    const domain = item.domain.toLowerCase();
+    const current = perDomain.get(domain) ?? 0;
+    if (current >= maxPerDomain) continue;
+
+    perDomain.set(domain, current + 1);
+    const { rankScore: _unused, ...result } = item;
+    output.push(result);
+
+    if (output.length >= maxResults) break;
   }
 
-  return ranked;
+  return output;
 }
 
-export { canonicalizeUrl };
-export type { SearchResult } from "./types";
-export default rankResults;
+export default rankSearchResults;
