@@ -1,178 +1,185 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Queryx — Agent-native search API</title>
-  <link rel="stylesheet" href="styles.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Queryx — Agent-native search API</title>
+    <meta
+      name="description"
+      content="Search the web with Queryx. Pay per query using x402 on Base. No accounts. Fast, structured JSON."
+    />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container nav">
+        <a class="brand" href="#top" aria-label="Queryx home">Queryx</a>
+        <a
+          class="nav-link"
+          href="https://github.com/langoustine69/queryx"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          GitHub
+        </a>
+      </div>
+    </header>
 
-  <!-- Hero -->
-  <section class="hero">
-    <div class="container">
-      <div class="badge">x402 payments on Base</div>
-      <h1>Search the web.<br>Pay per query.<br>No accounts.</h1>
-      <p class="subtitle">The search API built for agents. 5x cheaper than Perplexity. Native x402 micropayments on Base.</p>
-      <div class="cta-row">
-        <a href="#quickstart" class="btn btn-primary">Try it &rarr;</a>
-        <a href="#pricing" class="btn btn-secondary">View pricing</a>
-      </div>
-    </div>
-  </section>
+    <main id="top">
+      <section class="hero section">
+        <div class="container">
+          <p class="eyebrow">Agent-native search API</p>
+          <h1>Search the web. Pay per query. No accounts.</h1>
+          <p class="subheadline">
+            Queryx uses x402 micropayments on Base so your agent pays only for
+            what it calls — starting at $0.001 per request.
+          </p>
+          <div class="cta-group">
+            <a class="btn btn-primary" href="#pricing">See pricing</a>
+            <a
+              class="btn btn-secondary"
+              href="https://github.com/langoustine69/queryx"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              View repo
+            </a>
+          </div>
+        </div>
+      </section>
 
-  <!-- Pricing -->
-  <section id="pricing" class="pricing">
-    <div class="container">
-      <h2>Simple pricing</h2>
-      <p class="section-sub">Pay per query. No subscriptions. No API keys. No accounts.</p>
-      <div class="price-grid">
-        <div class="price-card">
-          <div class="endpoint">/v1/search</div>
-          <div class="price">$0.001</div>
-          <div class="price-desc">Web search + AI synthesis. Fast, structured JSON with sources and confidence scores.</div>
-        </div>
-        <div class="price-card">
-          <div class="endpoint">/v1/search/news</div>
-          <div class="price">$0.001</div>
-          <div class="price-desc">News-focused search. Results sorted by recency with publication dates.</div>
-        </div>
-        <div class="price-card featured">
-          <div class="endpoint">/v1/search/deep</div>
-          <div class="price">$0.005</div>
-          <div class="price-desc">Multi-source deep research. Cross-references multiple sources for complex queries.</div>
-        </div>
-      </div>
-      <div class="comparison">
-        <h3>How we compare</h3>
-        <div class="comp-table">
-          <div class="comp-row comp-header">
-            <span></span>
-            <span>Price/query</span>
-            <span>x402</span>
-            <span>No account</span>
-            <span>Agent JSON</span>
-          </div>
-          <div class="comp-row highlight">
-            <span class="provider">Queryx</span>
-            <span class="cheap">$0.001</span>
-            <span class="yes">&#10003;</span>
-            <span class="yes">&#10003;</span>
-            <span class="yes">&#10003;</span>
-          </div>
-          <div class="comp-row">
-            <span class="provider">Perplexity</span>
-            <span class="expensive">$0.005&ndash;0.014</span>
-            <span class="no">&times;</span>
-            <span class="no">&times;</span>
-            <span class="no">&times;</span>
-          </div>
-          <div class="comp-row">
-            <span class="provider">Tavily</span>
-            <span class="expensive">$0.004</span>
-            <span class="no">&times;</span>
-            <span class="no">&times;</span>
-            <span class="yes">&#10003;</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
+      <section id="pricing" class="section">
+        <div class="container">
+          <h2>Simple endpoint pricing</h2>
+          <p class="section-lead">
+            Flat per-query pricing with no monthly commitment.
+          </p>
 
-  <!-- Quickstart -->
-  <section id="quickstart" class="quickstart">
-    <div class="container">
-      <h2>Quick start</h2>
-      <p class="section-sub">One curl. That's it.</p>
-      <div class="code-block">
-        <div class="code-header">
-          <span class="code-lang">bash</span>
-          <button class="copy-btn" onclick="copyCode(this)" data-code='curl -H "PAYMENT-SIGNATURE: <x402-sig>" \
-  "https://queryx.run/v1/search?q=Fed+rate+decision+2026"'>Copy</button>
-        </div>
-        <pre><code>curl -H "PAYMENT-SIGNATURE: &lt;x402-sig&gt;" \
-  "https://queryx.run/v1/search?q=Fed+rate+decision+2026"</code></pre>
-      </div>
-      <details class="response-toggle">
-        <summary>View response</summary>
-        <div class="code-block">
-          <div class="code-header">
-            <span class="code-lang">json</span>
+          <div class="pricing-grid">
+            <article class="card">
+              <h3>/v1/search</h3>
+              <p class="price">$0.001<span>/query</span></p>
+              <p class="description">General web search for fast retrieval.</p>
+              <p class="compare">
+                Competitors: Perplexity $0.005–$0.014 · Tavily $0.004
+              </p>
+            </article>
+
+            <article class="card">
+              <h3>/v1/search/news</h3>
+              <p class="price">$0.001<span>/query</span></p>
+              <p class="description">
+                Fresh news-focused results for real-time tasks.
+              </p>
+              <p class="compare">
+                Competitors: Perplexity $0.005–$0.014 · Tavily $0.004
+              </p>
+            </article>
+
+            <article class="card">
+              <h3>/v1/search/deep</h3>
+              <p class="price">$0.005<span>/query</span></p>
+              <p class="description">
+                Deeper retrieval for harder research queries.
+              </p>
+              <p class="compare">
+                Competitors: Perplexity $0.005–$0.014 · Tavily $0.004
+              </p>
+            </article>
           </div>
-          <pre><code>{
-  <span class="key">"query"</span>: <span class="str">"Fed rate decision 2026"</span>,
-  <span class="key">"answer"</span>: <span class="str">"The Federal Reserve held rates steady at 4.25-4.50% in its January 2026 meeting, citing persistent inflation concerns..."</span>,
-  <span class="key">"sources"</span>: [
+        </div>
+      </section>
+
+      <section id="quick-start" class="section">
+        <div class="container">
+          <h2>Quick start</h2>
+          <p class="section-lead">
+            Make a request with an x402 payment header and get structured JSON.
+          </p>
+
+          <div class="code-shell">
+            <div class="code-header">
+              <span>curl example</span>
+              <button class="copy-btn" data-copy="#curl-example" type="button">
+                Copy
+              </button>
+            </div>
+            <pre id="curl-example"><code>curl https://api.queryx.dev/v1/search \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -H "X-Payment: &lt;x402-token&gt;" \
+  -d '{
+    "q": "latest AI model releases",
+    "num_results": 5
+  }'</code></pre>
+
+            <details class="response-toggle">
+              <summary>Show sample JSON response</summary>
+              <pre><code>{
+  "query": "latest AI model releases",
+  "results": [
     {
-      <span class="key">"title"</span>: <span class="str">"Fed Holds Rates Steady in January 2026"</span>,
-      <span class="key">"url"</span>: <span class="str">"https://reuters.com/markets/fed-jan-2026"</span>,
-      <span class="key">"snippet"</span>: <span class="str">"The Federal Reserve maintained its benchmark rate..."</span>,
-      <span class="key">"published"</span>: <span class="str">"2026-01-29T18:00:00Z"</span>
+      "title": "Model Release Roundup",
+      "url": "https://example.com/model-release-roundup",
+      "snippet": "A breakdown of this week's major foundation model launches.",
+      "source": "Example News",
+      "published_at": "2026-03-01T14:22:00Z"
     }
   ],
-  <span class="key">"confidence"</span>: <span class="num">0.92</span>,
-  <span class="key">"freshness"</span>: {
-    <span class="key">"fetchedAt"</span>: <span class="str">"2026-02-27T10:30:00Z"</span>,
-    <span class="key">"resultsAge"</span>: <span class="str">"29d"</span>
-  },
-  <span class="key">"model"</span>: <span class="str">"queryx-fast-v1"</span>,
-  <span class="key">"tokens"</span>: { <span class="key">"in"</span>: <span class="num">312</span>, <span class="key">"out"</span>: <span class="num">187</span> }
+  "total_results": 1,
+  "latency_ms": 182
 }</code></pre>
+            </details>
+          </div>
         </div>
-      </details>
-    </div>
-  </section>
+      </section>
 
-  <!-- How it works -->
-  <section class="how-it-works">
-    <div class="container">
-      <h2>How it works</h2>
-      <div class="steps">
-        <div class="step">
-          <div class="step-icon">&#128269;</div>
-          <div class="step-num">1</div>
-          <h3>Agent sends query</h3>
-          <p>Your agent hits the API with a search query and an x402 payment signature.</p>
+      <section id="how" class="section">
+        <div class="container">
+          <h2>How it works</h2>
+          <div class="steps">
+            <article class="step">
+              <p class="step-index">1</p>
+              <h3>Send a query</h3>
+              <p>
+                Your agent calls a Queryx endpoint with the query payload.
+              </p>
+            </article>
+            <article class="step">
+              <p class="step-index">2</p>
+              <h3>x402 payment on Base</h3>
+              <p>
+                Request is authorized through x402 micropayment settlement on
+                Base.
+              </p>
+            </article>
+            <article class="step">
+              <p class="step-index">3</p>
+              <h3>Receive structured JSON</h3>
+              <p>
+                Get normalized search results ready for tools, memory, and
+                downstream workflows.
+              </p>
+            </article>
+          </div>
         </div>
-        <div class="step-arrow">&rarr;</div>
-        <div class="step">
-          <div class="step-icon">&#9889;</div>
-          <div class="step-num">2</div>
-          <h3>Payment verified</h3>
-          <p>x402 USDC micropayment verified on Base in under 100ms. No accounts, no API keys.</p>
-        </div>
-        <div class="step-arrow">&rarr;</div>
-        <div class="step">
-          <div class="step-icon">&#128202;</div>
-          <div class="step-num">3</div>
-          <h3>Structured JSON returned</h3>
-          <p>Search results synthesized by AI with sources, confidence scores, and freshness metadata.</p>
-        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <a
+          href="https://github.com/langoustine69/queryx"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          GitHub
+        </a>
+        <p>Built by @langoustine69 · <span id="year"></span></p>
       </div>
-    </div>
-  </section>
+    </footer>
 
-  <!-- Footer -->
-  <footer>
-    <div class="container footer-inner">
-      <div class="footer-links">
-        <a href="https://github.com/langoustine69/queryx">GitHub</a>
-        <a href="https://xgate.run">xgate.run</a>
-      </div>
-      <div class="footer-credit">Built by <a href="https://github.com/langoustine69">@langoustine69</a></div>
-    </div>
-  </footer>
-
-  <script>
-    function copyCode(btn) {
-      const code = btn.getAttribute('data-code');
-      navigator.clipboard.writeText(code).then(() => {
-        btn.textContent = 'Copied!';
-        setTimeout(() => btn.textContent = 'Copy', 2000);
-      });
-    }
-  </script>
-</body>
+    <script src="./script.js" defer></script>
+  </body>
 </html>
