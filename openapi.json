@@ -1,11 +1,10 @@
 {
+  "$schema": "https://spec.openapis.org/oas/3.1/dialect/base",
   "openapi": "3.1.0",
-  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
     "title": "Queryx API",
     "version": "1.0.0",
-    "summary": "x402-metered web and research search API",
-    "description": "Queryx provides metered search endpoints secured with x402 payments on Base USDC."
+    "description": "Queryx provides paid web search, news search, and deep research endpoints secured by x402 on Base."
   },
   "servers": [
     {
@@ -15,230 +14,702 @@
   ],
   "tags": [
     {
-      "name": "health",
-      "description": "Service health and readiness"
+      "name": "Health",
+      "description": "Service health and readiness."
     },
     {
-      "name": "search",
-      "description": "Web and news search endpoints"
+      "name": "Search",
+      "description": "General web search."
     },
     {
-      "name": "research",
-      "description": "Deep research endpoint"
+      "name": "News",
+      "description": "News-focused search."
+    },
+    {
+      "name": "Deep",
+      "description": "Multi-step deep research workflow."
     }
   ],
+  "security": [
+    {
+      "x402": []
+    }
+  ],
+  "x-x402": {
+    "network": "base",
+    "asset": "USDC",
+    "decimals": 6,
+    "facilitator_address": "0x5A6f7A2b9f7B92E8d6A55E2d88cbf8EeCd8A4B13"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check",
+        "operationId": "getHealth",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is healthy.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "status": "ok",
+                      "version": "1.0.0",
+                      "uptime_s": 38192,
+                      "now": "2026-03-04T12:41:53Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "tags": [
+          "Search"
+        ],
+        "summary": "Web search",
+        "description": "Returns ranked web results for the given query.",
+        "operationId": "searchWeb",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Search query.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "examples": {
+              "basic": {
+                "value": "base ecosystem funding rounds"
+              }
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of results.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            },
+            "examples": {
+              "small": {
+                "value": 5
+              }
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "description": "Two-letter region code.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z]{2}$",
+              "default": "US"
+            },
+            "examples": {
+              "us": {
+                "value": "US"
+              }
+            }
+          },
+          {
+            "name": "safe_search",
+            "in": "query",
+            "required": false,
+            "description": "Safe search mode.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "off",
+                "moderate",
+                "strict"
+              ],
+              "default": "moderate"
+            }
+          },
+          {
+            "name": "freshness",
+            "in": "query",
+            "required": false,
+            "description": "Recency filter.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "any",
+                "day",
+                "week",
+                "month"
+              ],
+              "default": "any"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              },
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSearchResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "query": "base ecosystem funding rounds",
+                      "took_ms": 143,
+                      "total": 2,
+                      "results": [
+                        {
+                          "title": "Q1 Base Ecosystem Funding Summary",
+                          "url": "https://queryx.run/mock/source/base-funding-q1",
+                          "snippet": "An overview of major funding rounds announced in the Base ecosystem in Q1.",
+                          "source": "Queryx Mock Source",
+                          "published_at": "2026-02-27T10:20:11Z",
+                          "score": 0.93
+                        },
+                        {
+                          "title": "Developer Tooling Raises for Base Builders",
+                          "url": "https://queryx.run/mock/source/base-tooling-funding",
+                          "snippet": "Roundup of developer infrastructure and tooling startups raising capital on Base.",
+                          "source": "Queryx Mock Source",
+                          "published_at": "2026-02-24T08:11:00Z",
+                          "score": 0.88
+                        }
+                      ],
+                      "cost": {
+                        "asset": "USDC",
+                        "amount_base_units": "2500",
+                        "amount": "0.0025"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v1/search/news": {
+      "get": {
+        "tags": [
+          "News"
+        ],
+        "summary": "News search",
+        "description": "Returns recent and relevant news results.",
+        "operationId": "searchNews",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "News query.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "examples": {
+              "basic": {
+                "value": "base developer grants"
+              }
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of results.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "description": "Only include articles published at or after this timestamp.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "examples": {
+              "recent": {
+                "value": "2026-02-01T00:00:00Z"
+              }
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "Sort mode.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "relevancy",
+                "date"
+              ],
+              "default": "relevancy"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "News results.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              },
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsSearchResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "query": "base developer grants",
+                      "took_ms": 167,
+                      "total": 2,
+                      "results": [
+                        {
+                          "title": "Base Expands Developer Grants Program",
+                          "url": "https://queryx.run/mock/news/base-grants-expansion",
+                          "snippet": "The grants initiative adds new tracks for infrastructure and education.",
+                          "source": "Queryx Mock News",
+                          "outlet": "Queryx Daily",
+                          "published_at": "2026-03-02T07:11:18Z",
+                          "score": 0.96,
+                          "category": "technology"
+                        },
+                        {
+                          "title": "How Builders Are Using Base Grant Funding",
+                          "url": "https://queryx.run/mock/news/base-grants-case-studies",
+                          "snippet": "Interview-driven piece on successful grant-funded teams.",
+                          "source": "Queryx Mock News",
+                          "outlet": "Builder Wire",
+                          "published_at": "2026-03-01T14:20:00Z",
+                          "score": 0.89,
+                          "category": "business"
+                        }
+                      ],
+                      "cost": {
+                        "asset": "USDC",
+                        "amount_base_units": "4000",
+                        "amount": "0.004"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v1/search/deep": {
+      "post": {
+        "tags": [
+          "Deep"
+        ],
+        "summary": "Deep research",
+        "description": "Performs multi-step retrieval and synthesis with citations.",
+        "operationId": "deepSearch",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeepSearchRequest"
+              },
+              "examples": {
+                "default": {
+                  "value": {
+                    "query": "What are the main risks and opportunities for Base ecosystem startups in 2026?",
+                    "max_results": 12,
+                    "search_depth": "standard",
+                    "include_news": true,
+                    "include_citations": true,
+                    "freshness": "month"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deep research report.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/X-Request-Id"
+              },
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/X-RateLimit-Limit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/X-RateLimit-Remaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/X-RateLimit-Reset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeepSearchResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "query": "What are the main risks and opportunities for Base ecosystem startups in 2026?",
+                      "answer": "The dominant opportunity is distribution leverage via wallet-native channels and stablecoin rails, while the dominant risk is margin compression in undifferentiated tooling segments.",
+                      "key_findings": [
+                        "Developer tooling remains crowded, forcing differentiation via workflow depth and enterprise features.",
+                        "Consumer apps with built-in onchain payments are showing stronger retention than utility-only products.",
+                        "Compliance and treasury operations are becoming a larger share of total startup cost."
+                      ],
+                      "citations": [
+                        {
+                          "title": "2026 Base Builder Landscape",
+                          "url": "https://queryx.run/mock/research/base-builder-landscape-2026",
+                          "snippet": "Annual report covering funding, retention, and monetization by segment.",
+                          "source": "Queryx Mock Research",
+                          "published_at": "2026-02-20T09:30:00Z"
+                        },
+                        {
+                          "title": "Stablecoin Settlement Trends on Base",
+                          "url": "https://queryx.run/mock/research/base-stablecoin-settlement",
+                          "snippet": "Quarterly analysis of transaction volume and business use-cases.",
+                          "source": "Queryx Mock Research",
+                          "published_at": "2026-02-28T15:02:00Z"
+                        }
+                      ],
+                      "results": [
+                        {
+                          "title": "Base Builder Landscape 2026",
+                          "url": "https://queryx.run/mock/research/base-builder-landscape-2026",
+                          "snippet": "Survey and metrics for startup outcomes on Base.",
+                          "source": "Queryx Mock Research",
+                          "published_at": "2026-02-20T09:30:00Z",
+                          "score": 0.95
+                        },
+                        {
+                          "title": "Stablecoin Settlement Trends on Base",
+                          "url": "https://queryx.run/mock/research/base-stablecoin-settlement",
+                          "snippet": "Analysis of onchain payment growth.",
+                          "source": "Queryx Mock Research",
+                          "published_at": "2026-02-28T15:02:00Z",
+                          "score": 0.9
+                        }
+                      ],
+                      "took_ms": 1320,
+                      "total": 12,
+                      "cost": {
+                        "asset": "USDC",
+                        "amount_base_units": "25000",
+                        "amount": "0.025"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
   "components": {
     "securitySchemes": {
       "x402": {
         "type": "apiKey",
         "in": "header",
-        "name": "X-402-Payment",
-        "description": "x402 payment envelope. For paid retries this is a base64url-encoded JSON object containing quote and payer metadata."
+        "name": "X-PAYMENT",
+        "description": "Base64url-encoded x402 payment envelope signed by the payer wallet. Required for paid endpoints."
       }
     },
-    "parameters": {
-      "q": {
-        "name": "q",
-        "in": "query",
-        "required": true,
-        "description": "Natural-language search query.",
+    "headers": {
+      "X-Request-Id": {
+        "description": "Request correlation id.",
         "schema": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1024
-        },
-        "examples": {
-          "basic": {
-            "value": "best LLM eval frameworks"
-          }
+          "type": "string"
         }
       },
-      "limit": {
-        "name": "limit",
-        "in": "query",
-        "required": false,
-        "description": "Maximum number of results.",
+      "X-RateLimit-Limit": {
+        "description": "Allowed requests in the current rate-limit window.",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "X-RateLimit-Remaining": {
+        "description": "Remaining requests in the current rate-limit window.",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "X-RateLimit-Reset": {
+        "description": "Unix timestamp when the current rate-limit window resets.",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "Retry-After": {
+        "description": "Seconds to wait before retrying.",
         "schema": {
           "type": "integer",
-          "minimum": 1,
-          "maximum": 20,
-          "default": 8
+          "minimum": 1
+        }
+      },
+      "X-402-Required": {
+        "description": "Set to true when payment is required.",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "X-402-Challenge": {
+        "description": "Base64url-encoded x402 challenge JSON used to construct a payment envelope.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "PaymentRequired": {
+        "description": "Payment required. Retry the same request with a valid x402 payment envelope.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/X-Request-Id"
+          },
+          "X-402-Required": {
+            "$ref": "#/components/headers/X-402-Required"
+          },
+          "X-402-Challenge": {
+            "$ref": "#/components/headers/X-402-Challenge"
+          }
         },
-        "examples": {
-          "default": {
-            "value": 8
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PaymentRequiredError"
+            },
+            "examples": {
+              "paymentRequired": {
+                "value": {
+                  "error": {
+                    "code": "PAYMENT_REQUIRED",
+                    "message": "Valid x402 payment is required for this endpoint.",
+                    "request_id": "req_402_a12f09"
+                  },
+                  "payment": {
+                    "scheme": "x402",
+                    "network": "base",
+                    "asset": "USDC",
+                    "decimals": 6,
+                    "amount_base_units": "2500",
+                    "amount": "0.0025",
+                    "facilitator_address": "0x5A6f7A2b9f7B92E8d6A55E2d88cbf8EeCd8A4B13",
+                    "pay_to": "0xD4D1A8F4c37a0eaD8B61B7f957f9f93f8AA3d815",
+                    "nonce": "n_4fc31ced33",
+                    "expires_at": "2026-03-04T12:45:00Z",
+                    "request_hash": "0x9b9be318c8659e8ec9f49de22f77fd62b745cecc6f6ec9d4fa0d4f6cf15d2a40"
+                  }
+                }
+              }
+            }
           }
         }
       },
-      "offset": {
-        "name": "offset",
-        "in": "query",
-        "required": false,
-        "description": "Zero-based pagination offset.",
-        "schema": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 200,
-          "default": 0
+      "ValidationFailed": {
+        "description": "Validation failed.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/X-Request-Id"
+          }
         },
-        "examples": {
-          "firstPage": {
-            "value": 0
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "examples": {
+              "invalidInput": {
+                "value": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "One or more fields are invalid.",
+                    "request_id": "req_422_93f1c8",
+                    "details": [
+                      {
+                        "path": "q",
+                        "message": "q must be at least 1 character."
+                      }
+                    ]
+                  }
+                }
+              }
+            }
           }
         }
       },
-      "lang": {
-        "name": "lang",
-        "in": "query",
-        "required": false,
-        "description": "Language hint (ISO-like code).",
-        "schema": {
-          "type": "string",
-          "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
-          "default": "en"
+      "TooManyRequests": {
+        "description": "Rate limit exceeded.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/X-Request-Id"
+          },
+          "Retry-After": {
+            "$ref": "#/components/headers/Retry-After"
+          },
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/X-RateLimit-Limit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/X-RateLimit-Remaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/X-RateLimit-Reset"
+          }
         },
-        "examples": {
-          "english": {
-            "value": "en"
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RateLimitError"
+            },
+            "examples": {
+              "rateLimited": {
+                "value": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Rate limit exceeded. Retry later.",
+                    "request_id": "req_429_7723c1"
+                  },
+                  "retry_after_seconds": 8
+                }
+              }
+            }
           }
         }
       },
-      "region": {
-        "name": "region",
-        "in": "query",
-        "required": false,
-        "description": "Region/country hint for ranking.",
-        "schema": {
-          "type": "string",
-          "minLength": 2,
-          "maxLength": 8,
-          "default": "US"
-        },
-        "examples": {
-          "us": {
-            "value": "US"
+      "InternalServerError": {
+        "description": "Unexpected server-side error.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/X-Request-Id"
           }
-        }
-      },
-      "safe": {
-        "name": "safe",
-        "in": "query",
-        "required": false,
-        "description": "Safety filter level.",
-        "schema": {
-          "type": "string",
-          "enum": [
-            "off",
-            "moderate",
-            "strict"
-          ],
-          "default": "moderate"
         },
-        "examples": {
-          "moderate": {
-            "value": "moderate"
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/InternalError"
+            },
+            "examples": {
+              "internal": {
+                "value": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "Unexpected server error.",
+                    "request_id": "req_500_5fca11"
+                  }
+                }
+              }
+            }
           }
-        }
-      },
-      "freshness": {
-        "name": "freshness",
-        "in": "query",
-        "required": false,
-        "description": "Freshness window used for ranking.",
-        "schema": {
-          "type": "string",
-          "enum": [
-            "any",
-            "day",
-            "week",
-            "month",
-            "year"
-          ],
-          "default": "any"
-        },
-        "examples": {
-          "week": {
-            "value": "week"
-          }
-        }
-      },
-      "newsSort": {
-        "name": "sort",
-        "in": "query",
-        "required": false,
-        "description": "Sort strategy for news results.",
-        "schema": {
-          "type": "string",
-          "enum": [
-            "relevance",
-            "date"
-          ],
-          "default": "relevance"
-        },
-        "examples": {
-          "date": {
-            "value": "date"
-          }
-        }
-      },
-      "fromDate": {
-        "name": "from",
-        "in": "query",
-        "required": false,
-        "description": "Lower bound publication date (inclusive).",
-        "schema": {
-          "type": "string",
-          "format": "date"
-        },
-        "examples": {
-          "from": {
-            "value": "2026-02-01"
-          }
-        }
-      },
-      "toDate": {
-        "name": "to",
-        "in": "query",
-        "required": false,
-        "description": "Upper bound publication date (inclusive).",
-        "schema": {
-          "type": "string",
-          "format": "date"
-        },
-        "examples": {
-          "to": {
-            "value": "2026-03-04"
-          }
-        }
-      },
-      "x402AddressHeader": {
-        "name": "X-402-Address",
-        "in": "header",
-        "required": false,
-        "description": "Payer wallet address on Base.",
-        "schema": {
-          "type": "string",
-          "pattern": "^0x[a-fA-F0-9]{40}$"
-        }
-      },
-      "x402TimestampHeader": {
-        "name": "X-402-Timestamp",
-        "in": "header",
-        "required": false,
-        "description": "Unix epoch timestamp in seconds used in the signature payload.",
-        "schema": {
-          "type": "integer",
-          "minimum": 0
-        }
-      },
-      "x402SignatureHeader": {
-        "name": "X-402-Signature",
-        "in": "header",
-        "required": false,
-        "description": "Signature of canonical x402 string (EIP-191 personal_sign).",
-        "schema": {
-          "type": "string",
-          "minLength": 40
         }
       }
     },
@@ -248,10 +719,9 @@
         "additionalProperties": false,
         "required": [
           "status",
-          "service",
           "version",
-          "timestamp",
-          "uptime_seconds"
+          "uptime_s",
+          "now"
         ],
         "properties": {
           "status": {
@@ -260,61 +730,41 @@
               "ok"
             ]
           },
-          "service": {
-            "type": "string",
-            "example": "queryx-api"
-          },
           "version": {
-            "type": "string",
-            "example": "1.0.0"
+            "type": "string"
           },
-          "timestamp": {
+          "uptime_s": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "now": {
             "type": "string",
             "format": "date-time"
-          },
-          "uptime_seconds": {
-            "type": "number",
-            "minimum": 0
           }
         }
       },
-      "Usage": {
+      "Cost": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "endpoint",
-          "cost_base_units",
-          "cost_usdc",
-          "rate_limit_limit",
-          "rate_limit_remaining",
-          "rate_limit_reset_seconds"
+          "asset",
+          "amount_base_units",
+          "amount"
         ],
         "properties": {
-          "endpoint": {
+          "asset": {
             "type": "string",
-            "example": "/v1/search"
+            "enum": [
+              "USDC"
+            ]
           },
-          "cost_base_units": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "USDC base units where 1 USDC = 1,000,000 base units."
-          },
-          "cost_usdc": {
+          "amount_base_units": {
             "type": "string",
-            "pattern": "^\\d+(\\.\\d{1,6})?$",
-            "example": "0.025"
+            "pattern": "^[0-9]+$"
           },
-          "rate_limit_limit": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "rate_limit_remaining": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "rate_limit_reset_seconds": {
-            "type": "integer",
-            "minimum": 0
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+)?$"
           }
         }
       },
@@ -326,6 +776,7 @@
           "url",
           "snippet",
           "source",
+          "published_at",
           "score"
         ],
         "properties": {
@@ -342,6 +793,10 @@
           "source": {
             "type": "string"
           },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          },
           "score": {
             "type": "number",
             "minimum": 0,
@@ -350,6 +805,29 @@
         }
       },
       "NewsResult": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SearchResult"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "outlet",
+              "category"
+            ],
+            "properties": {
+              "outlet": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "Citation": {
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -357,7 +835,6 @@
           "url",
           "snippet",
           "source",
-          "score",
           "published_at"
         ],
         "properties": {
@@ -374,45 +851,33 @@
           "source": {
             "type": "string"
           },
-          "score": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
           "published_at": {
             "type": "string",
             "format": "date-time"
-          },
-          "image_url": {
-            "type": "string",
-            "format": "uri"
           }
         }
       },
-      "SearchResponse": {
+      "WebSearchResponse": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "request_id",
           "query",
-          "type",
+          "took_ms",
+          "total",
           "results",
-          "latency_ms",
-          "usage"
+          "cost"
         ],
         "properties": {
-          "request_id": {
-            "type": "string",
-            "example": "req_01JNF89R6G3H2EA0R9N81A8NKT"
-          },
           "query": {
             "type": "string"
           },
-          "type": {
-            "type": "string",
-            "enum": [
-              "web"
-            ]
+          "took_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
           },
           "results": {
             "type": "array",
@@ -420,12 +885,8 @@
               "$ref": "#/components/schemas/SearchResult"
             }
           },
-          "latency_ms": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "usage": {
-            "$ref": "#/components/schemas/Usage"
+          "cost": {
+            "$ref": "#/components/schemas/Cost"
           }
         }
       },
@@ -433,26 +894,23 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "request_id",
           "query",
-          "type",
+          "took_ms",
+          "total",
           "results",
-          "latency_ms",
-          "usage"
+          "cost"
         ],
         "properties": {
-          "request_id": {
-            "type": "string",
-            "example": "req_01JNF8A2NKVK9W8AB6A2RQ8C4S"
-          },
           "query": {
             "type": "string"
           },
-          "type": {
-            "type": "string",
-            "enum": [
-              "news"
-            ]
+          "took_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
           },
           "results": {
             "type": "array",
@@ -460,12 +918,8 @@
               "$ref": "#/components/schemas/NewsResult"
             }
           },
-          "latency_ms": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "usage": {
-            "$ref": "#/components/schemas/Usage"
+          "cost": {
+            "$ref": "#/components/schemas/Cost"
           }
         }
       },
@@ -479,88 +933,40 @@
           "query": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 1024
+            "maxLength": 2000
           },
-          "max_sources": {
+          "max_results": {
             "type": "integer",
-            "minimum": 3,
-            "maximum": 40,
-            "default": 12
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10
           },
-          "include_domains": {
-            "type": "array",
-            "maxItems": 50,
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 255
-            }
-          },
-          "exclude_domains": {
-            "type": "array",
-            "maxItems": 50,
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 255
-            }
-          },
-          "lang": {
-            "type": "string",
-            "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
-            "default": "en"
-          },
-          "region": {
-            "type": "string",
-            "default": "US"
-          },
-          "safe": {
+          "search_depth": {
             "type": "string",
             "enum": [
-              "off",
-              "moderate",
-              "strict"
-            ],
-            "default": "moderate"
-          },
-          "reasoning_depth": {
-            "type": "string",
-            "enum": [
+              "quick",
               "standard",
-              "high"
+              "exhaustive"
             ],
             "default": "standard"
-          }
-        }
-      },
-      "DeepSource": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "title",
-          "url",
-          "snippet",
-          "source",
-          "relevance"
-        ],
-        "properties": {
-          "title": {
-            "type": "string"
           },
-          "url": {
+          "include_news": {
+            "type": "boolean",
+            "default": true
+          },
+          "include_citations": {
+            "type": "boolean",
+            "default": true
+          },
+          "freshness": {
             "type": "string",
-            "format": "uri"
-          },
-          "snippet": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "relevance": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
+            "enum": [
+              "any",
+              "day",
+              "week",
+              "month"
+            ],
+            "default": "month"
           }
         }
       },
@@ -568,65 +974,80 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "request_id",
           "query",
-          "summary",
           "answer",
-          "key_points",
-          "sources",
-          "latency_ms",
-          "usage"
+          "key_findings",
+          "citations",
+          "results",
+          "took_ms",
+          "total",
+          "cost"
         ],
         "properties": {
-          "request_id": {
-            "type": "string"
-          },
           "query": {
-            "type": "string"
-          },
-          "summary": {
             "type": "string"
           },
           "answer": {
             "type": "string"
           },
-          "key_points": {
+          "key_findings": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "sources": {
+          "citations": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/DeepSource"
+              "$ref": "#/components/schemas/Citation"
             }
           },
-          "latency_ms": {
-            "type": "integer",
-            "minimum": 1
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            }
           },
-          "usage": {
-            "$ref": "#/components/schemas/Usage"
+          "took_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cost": {
+            "$ref": "#/components/schemas/Cost"
           }
         }
       },
-      "ErrorDetail": {
+      "ValidationIssue": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "message"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorObject": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "code",
-          "message"
+          "message",
+          "request_id"
         ],
         "properties": {
           "code": {
-            "type": "string",
-            "enum": [
-              "payment_required",
-              "validation_error",
-              "rate_limited",
-              "internal_error"
-            ]
+            "type": "string"
           },
           "message": {
             "type": "string"
@@ -634,107 +1055,15 @@
           "request_id": {
             "type": "string"
           },
-          "retry_after_seconds": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "invalid_fields": {
+          "details": {
             "type": "array",
             "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "field",
-                "reason"
-              ],
-              "properties": {
-                "field": {
-                  "type": "string"
-                },
-                "reason": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/components/schemas/ValidationIssue"
             }
           }
         }
       },
-      "PaymentRequirement": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "network",
-          "chain_id",
-          "asset",
-          "amount_base_units",
-          "amount",
-          "payment_id",
-          "facilitator",
-          "expires_at",
-          "signature_payload"
-        ],
-        "properties": {
-          "network": {
-            "type": "string",
-            "example": "base"
-          },
-          "chain_id": {
-            "type": "integer",
-            "example": 8453
-          },
-          "asset": {
-            "type": "string",
-            "example": "USDC"
-          },
-          "amount_base_units": {
-            "type": "integer",
-            "minimum": 1,
-            "example": 25000
-          },
-          "amount": {
-            "type": "string",
-            "pattern": "^\\d+(\\.\\d{1,6})?$",
-            "example": "0.025"
-          },
-          "payment_id": {
-            "type": "string",
-            "example": "pay_01JNF8C2KQ43P4FQRTQ6BRWWA8"
-          },
-          "facilitator": {
-            "type": "string",
-            "pattern": "^0x[a-fA-F0-9]{40}$",
-            "example": "0x6c7ad4e1bfa9c20e4a9e0467fd20170d1aa05c11"
-          },
-          "expires_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "signature_payload": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "version",
-              "scheme",
-              "message"
-            ],
-            "properties": {
-              "version": {
-                "type": "string",
-                "example": "QUERYX-X402-V1"
-              },
-              "scheme": {
-                "type": "string",
-                "example": "eip191"
-              },
-              "message": {
-                "type": "string",
-                "description": "Canonical string to sign with payer wallet key."
-              }
-            }
-          }
-        }
-      },
-      "ErrorResponse": {
+      "ErrorEnvelope": {
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -742,574 +1071,129 @@
         ],
         "properties": {
           "error": {
-            "$ref": "#/components/schemas/ErrorDetail"
-          },
-          "payment": {
-            "$ref": "#/components/schemas/PaymentRequirement"
-          }
-        }
-      }
-    },
-    "responses": {
-      "PaymentRequired": {
-        "description": "x402 payment required before request can be processed.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            },
-            "examples": {
-              "paymentRequired": {
-                "value": {
-                  "error": {
-                    "code": "payment_required",
-                    "message": "x402 payment is required for this endpoint.",
-                    "request_id": "req_01JNF8D7F4FB7CV0W5XKQ6QCMF"
-                  },
-                  "payment": {
-                    "network": "base",
-                    "chain_id": 8453,
-                    "asset": "USDC",
-                    "amount_base_units": 25000,
-                    "amount": "0.025",
-                    "payment_id": "pay_01JNF8C2KQ43P4FQRTQ6BRWWA8",
-                    "facilitator": "0x6c7ad4e1bfa9c20e4a9e0467fd20170d1aa05c11",
-                    "expires_at": "2026-03-04T12:00:00Z",
-                    "signature_payload": {
-                      "version": "QUERYX-X402-V1",
-                      "scheme": "eip191",
-                      "message": "QUERYX-X402-V1\nGET\n/v1/search?q=best+LLM+eval+frameworks&limit=3\n47DEQpj8HBSa__TImW-5JCeuQeRkm5NMpJWZG3hSuFU\npay_01JNF8C2KQ43P4FQRTQ6BRWWA8\n25000\nUSDC\nbase\n8453\n1709558400"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/schemas/ErrorObject"
           }
         }
       },
       "ValidationError": {
-        "description": "Input failed validation.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            },
-            "examples": {
-              "validation": {
-                "value": {
-                  "error": {
-                    "code": "validation_error",
-                    "message": "Validation failed for query parameters.",
-                    "request_id": "req_01JNF8E15N4MZV34H1N0NTHTW4",
-                    "invalid_fields": [
-                      {
-                        "field": "limit",
-                        "reason": "must be less than or equal to 20"
-                      }
-                    ]
-                  }
-                }
-              }
-            }
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorEnvelope"
           }
-        }
+        ]
       },
       "RateLimitError": {
-        "description": "Rate limit exceeded.",
-        "headers": {
-          "Retry-After": {
-            "description": "Seconds to wait before retrying.",
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        },
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            },
-            "examples": {
-              "rateLimit": {
-                "value": {
-                  "error": {
-                    "code": "rate_limited",
-                    "message": "Too many requests.",
-                    "request_id": "req_01JNF8ET3Q6R6PE7Q3SEFBRM9H",
-                    "retry_after_seconds": 12
-                  }
-                }
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorEnvelope"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "retry_after_seconds"
+            ],
+            "properties": {
+              "retry_after_seconds": {
+                "type": "integer",
+                "minimum": 1
               }
             }
+          }
+        ]
+      },
+      "PaymentRequirement": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scheme",
+          "network",
+          "asset",
+          "decimals",
+          "amount_base_units",
+          "amount",
+          "facilitator_address",
+          "pay_to",
+          "nonce",
+          "expires_at",
+          "request_hash"
+        ],
+        "properties": {
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "x402"
+            ]
+          },
+          "network": {
+            "type": "string",
+            "enum": [
+              "base"
+            ]
+          },
+          "asset": {
+            "type": "string",
+            "enum": [
+              "USDC"
+            ]
+          },
+          "decimals": {
+            "type": "integer",
+            "enum": [
+              6
+            ]
+          },
+          "amount_base_units": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+)?$"
+          },
+          "facilitator_address": {
+            "type": "string"
+          },
+          "pay_to": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "request_hash": {
+            "type": "string"
           }
         }
       },
-      "InternalServerError": {
-        "description": "Unexpected server error.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
-            },
-            "examples": {
-              "internal": {
-                "value": {
-                  "error": {
-                    "code": "internal_error",
-                    "message": "Unexpected internal error.",
-                    "request_id": "req_01JNF8FRQ28CG3YSA9NQXJ61AQ"
-                  }
-                }
+      "PaymentRequiredError": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorEnvelope"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "payment"
+            ],
+            "properties": {
+              "payment": {
+                "$ref": "#/components/schemas/PaymentRequirement"
               }
             }
           }
-        }
-      }
-    }
-  },
-  "paths": {
-    "/health": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "Health check",
-        "operationId": "getHealth",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Service is healthy.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                },
-                "examples": {
-                  "ok": {
-                    "value": {
-                      "status": "ok",
-                      "service": "queryx-api",
-                      "version": "1.0.0",
-                      "timestamp": "2026-03-04T10:15:30Z",
-                      "uptime_seconds": 91324.12
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
+        ]
+      },
+      "InternalError": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorEnvelope"
           }
-        }
-      }
-    },
-    "/v1/search": {
-      "get": {
-        "tags": [
-          "search"
-        ],
-        "summary": "Web search",
-        "description": "Low-latency web search endpoint billed per request with x402.",
-        "operationId": "searchWeb",
-        "security": [
-          {
-            "x402": []
-          }
-        ],
-        "x-pricing": {
-          "asset": "USDC",
-          "base_units": 25000,
-          "human_readable": "0.025",
-          "network": "base"
-        },
-        "x-rate-limits": {
-          "requests_per_minute": 120
-        },
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/q"
-          },
-          {
-            "$ref": "#/components/parameters/limit"
-          },
-          {
-            "$ref": "#/components/parameters/offset"
-          },
-          {
-            "$ref": "#/components/parameters/lang"
-          },
-          {
-            "$ref": "#/components/parameters/region"
-          },
-          {
-            "$ref": "#/components/parameters/safe"
-          },
-          {
-            "$ref": "#/components/parameters/freshness"
-          },
-          {
-            "$ref": "#/components/parameters/x402AddressHeader"
-          },
-          {
-            "$ref": "#/components/parameters/x402TimestampHeader"
-          },
-          {
-            "$ref": "#/components/parameters/x402SignatureHeader"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Search results.",
-            "headers": {
-              "X-RateLimit-Limit": {
-                "schema": {
-                  "type": "integer"
-                }
-              },
-              "X-RateLimit-Remaining": {
-                "schema": {
-                  "type": "integer"
-                }
-              },
-              "X-RateLimit-Reset": {
-                "schema": {
-                  "type": "integer"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchResponse"
-                },
-                "examples": {
-                  "webResults": {
-                    "value": {
-                      "request_id": "req_01JNF89R6G3H2EA0R9N81A8NKT",
-                      "query": "best LLM eval frameworks",
-                      "type": "web",
-                      "results": [
-                        {
-                          "title": "LLM Evaluation Methods",
-                          "url": "https://queryx.run/example/llm-eval-methods",
-                          "snippet": "A practical guide to automated and human-in-the-loop LLM evaluation.",
-                          "source": "Queryx Demo",
-                          "score": 0.94
-                        },
-                        {
-                          "title": "Benchmarking LLM Systems",
-                          "url": "https://queryx.run/example/benchmarking-llms",
-                          "snippet": "Coverage of retrieval-aware benchmarks and rubric scoring.",
-                          "source": "Queryx Demo",
-                          "score": 0.91
-                        }
-                      ],
-                      "latency_ms": 388,
-                      "usage": {
-                        "endpoint": "/v1/search",
-                        "cost_base_units": 25000,
-                        "cost_usdc": "0.025",
-                        "rate_limit_limit": 120,
-                        "rate_limit_remaining": 119,
-                        "rate_limit_reset_seconds": 60
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "402": {
-            "$ref": "#/components/responses/PaymentRequired"
-          },
-          "422": {
-            "$ref": "#/components/responses/ValidationError"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimitError"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
-    "/v1/search/news": {
-      "get": {
-        "tags": [
-          "search"
-        ],
-        "summary": "News search",
-        "description": "News-focused search endpoint with optional date filtering, billed with x402.",
-        "operationId": "searchNews",
-        "security": [
-          {
-            "x402": []
-          }
-        ],
-        "x-pricing": {
-          "asset": "USDC",
-          "base_units": 35000,
-          "human_readable": "0.035",
-          "network": "base"
-        },
-        "x-rate-limits": {
-          "requests_per_minute": 90
-        },
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/q"
-          },
-          {
-            "$ref": "#/components/parameters/limit"
-          },
-          {
-            "$ref": "#/components/parameters/offset"
-          },
-          {
-            "$ref": "#/components/parameters/lang"
-          },
-          {
-            "$ref": "#/components/parameters/region"
-          },
-          {
-            "$ref": "#/components/parameters/safe"
-          },
-          {
-            "$ref": "#/components/parameters/newsSort"
-          },
-          {
-            "$ref": "#/components/parameters/fromDate"
-          },
-          {
-            "$ref": "#/components/parameters/toDate"
-          },
-          {
-            "$ref": "#/components/parameters/x402AddressHeader"
-          },
-          {
-            "$ref": "#/components/parameters/x402TimestampHeader"
-          },
-          {
-            "$ref": "#/components/parameters/x402SignatureHeader"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "News results.",
-            "headers": {
-              "X-RateLimit-Limit": {
-                "schema": {
-                  "type": "integer"
-                }
-              },
-              "X-RateLimit-Remaining": {
-                "schema": {
-                  "type": "integer"
-                }
-              },
-              "X-RateLimit-Reset": {
-                "schema": {
-                  "type": "integer"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NewsSearchResponse"
-                },
-                "examples": {
-                  "newsResults": {
-                    "value": {
-                      "request_id": "req_01JNF8A2NKVK9W8AB6A2RQ8C4S",
-                      "query": "ai chip funding rounds",
-                      "type": "news",
-                      "results": [
-                        {
-                          "title": "AI Chip Startup Raises New Round",
-                          "url": "https://queryx.run/example/ai-chip-round",
-                          "snippet": "The company announced an oversubscribed round led by strategic investors.",
-                          "source": "Queryx Newswire",
-                          "score": 0.97,
-                          "published_at": "2026-03-03T14:10:00Z",
-                          "image_url": "https://queryx.run/example/images/ai-chip-round.jpg"
-                        }
-                      ],
-                      "latency_ms": 442,
-                      "usage": {
-                        "endpoint": "/v1/search/news",
-                        "cost_base_units": 35000,
-                        "cost_usdc": "0.035",
-                        "rate_limit_limit": 90,
-                        "rate_limit_remaining": 89,
-                        "rate_limit_reset_seconds": 60
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "402": {
-            "$ref": "#/components/responses/PaymentRequired"
-          },
-          "422": {
-            "$ref": "#/components/responses/ValidationError"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimitError"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
-    "/v1/search/deep": {
-      "post": {
-        "tags": [
-          "research"
-        ],
-        "summary": "Deep research search",
-        "description": "Multi-source deep research with synthesis and citations, billed with x402.",
-        "operationId": "searchDeep",
-        "security": [
-          {
-            "x402": []
-          }
-        ],
-        "x-pricing": {
-          "asset": "USDC",
-          "base_units": 125000,
-          "human_readable": "0.125",
-          "network": "base"
-        },
-        "x-rate-limits": {
-          "requests_per_minute": 30
-        },
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/x402AddressHeader"
-          },
-          {
-            "$ref": "#/components/parameters/x402TimestampHeader"
-          },
-          {
-            "$ref": "#/components/parameters/x402SignatureHeader"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeepSearchRequest"
-              },
-              "examples": {
-                "deepQuery": {
-                  "value": {
-                    "query": "What are the tradeoffs between sparse and dense retrieval for enterprise RAG?",
-                    "max_sources": 10,
-                    "include_domains": [
-                      "queryx.run"
-                    ],
-                    "exclude_domains": [
-                      "ads.queryx.run"
-                    ],
-                    "lang": "en",
-                    "region": "US",
-                    "safe": "moderate",
-                    "reasoning_depth": "high"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Deep research response.",
-            "headers": {
-              "X-RateLimit-Limit": {
-                "schema": {
-                  "type": "integer"
-                }
-              },
-              "X-RateLimit-Remaining": {
-                "schema": {
-                  "type": "integer"
-                }
-              },
-              "X-RateLimit-Reset": {
-                "schema": {
-                  "type": "integer"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeepSearchResponse"
-                },
-                "examples": {
-                  "deepResults": {
-                    "value": {
-                      "request_id": "req_01JNF8B2AXYHJ6YEKMN6BYBFFM",
-                      "query": "What are the tradeoffs between sparse and dense retrieval for enterprise RAG?",
-                      "summary": "Dense retrieval improves semantic recall while sparse retrieval remains strong for lexical precision, transparency, and lower infra overhead.",
-                      "answer": "For enterprise RAG, sparse retrieval is typically cheaper, easier to audit, and robust for exact-match intents. Dense retrieval improves semantic matching and multilingual recall but requires embedding lifecycle management and vector infra. Hybrid retrieval often gives the best overall relevance and resilience.",
-                      "key_points": [
-                        "Sparse methods excel on exact keywords and compliance traceability.",
-                        "Dense methods improve semantic recall and paraphrase tolerance.",
-                        "Hybrid fusion usually outperforms either method alone in production."
-                      ],
-                      "sources": [
-                        {
-                          "title": "Hybrid Retrieval in RAG Systems",
-                          "url": "https://queryx.run/example/hybrid-rag",
-                          "snippet": "A benchmark-oriented look at lexical, vector, and fused retrieval.",
-                          "source": "Queryx Research",
-                          "relevance": 0.96
-                        },
-                        {
-                          "title": "Dense vs Sparse Retrieval Tradeoffs",
-                          "url": "https://queryx.run/example/dense-vs-sparse",
-                          "snippet": "Operational tradeoffs for enterprise search deployments.",
-                          "source": "Queryx Research",
-                          "relevance": 0.93
-                        }
-                      ],
-                      "latency_ms": 1488,
-                      "usage": {
-                        "endpoint": "/v1/search/deep",
-                        "cost_base_units": 125000,
-                        "cost_usdc": "0.125",
-                        "rate_limit_limit": 30,
-                        "rate_limit_remaining": 29,
-                        "rate_limit_reset_seconds": 60
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "402": {
-            "$ref": "#/components/responses/PaymentRequired"
-          },
-          "422": {
-            "$ref": "#/components/responses/ValidationError"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimitError"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
+        ]
       }
     }
   }
