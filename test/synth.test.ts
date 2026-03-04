@@ -1,75 +1,59 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import type { SearchResult } from "../src/logic/brave";
 import { synthesize } from "../src/logic/synth";
-import type { SearchResult } from "../src/logic/types";
 
 const originalFetch = globalThis.fetch;
-const originalApiKey = process.env.OPENAI_API_KEY;
 
 const sampleResults: SearchResult[] = [
   {
-    title: "Bun 1.2 Released",
-    url: "https://example.com/bun-release",
-    snippet: "Bun ships speed improvements and runtime updates.",
-    domain: "example.com",
+    title: "Queryx documentation",
+    url: "https://docs.example.com/queryx",
+    snippet: "Queryx is a search API with ranking, synthesis, and cache support.",
+    sourceDomain: "docs.example.com",
     publishedAt: "2026-03-01T00:00:00.000Z",
-  },
-  {
-    title: "Runtime Benchmarks",
-    url: "https://another.com/bench",
-    snippet: "Independent benchmark data for modern runtimes.",
-    domain: "another.com",
-    publishedAt: "2026-02-28T00:00:00.000Z",
+    language: "en",
   },
 ];
 
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
 describe("synth.ts", () => {
-  beforeEach(() => {
-    process.env.OPENAI_API_KEY = "test-openai-key";
-  });
-
-  afterEach(() => {
-    (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
-    if (originalApiKey === undefined) {
-      delete process.env.OPENAI_API_KEY;
-    } else {
-      process.env.OPENAI_API_KEY = originalApiKey;
-    }
-  });
-
-  it("clamps confidence and uses returned token usage", async () => {
-    (globalThis as { fetch: typeof fetch }).fetch = (async () => {
+  test("clamps confidence and returns token usage", async () => {
+    globalThis.fetch = (async () => {
       return new Response(
         JSON.stringify({
-          model: "gpt-4o-mini",
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  answer: "Bun delivers runtime and tooling improvements.",
-                  confidence: 1.8,
-                }),
-              },
-            },
-          ],
+          model: "gpt-4o-mini-2026",
           usage: {
             prompt_tokens: 120,
-            completion_tokens: 25,
+            completion_tokens: 45,
           },
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  answer: "Queryx combines retrieval and synthesis for concise responses.",
+                  confidence: 1.7,
+                }),
+              },
+            },
+          ],
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
+        { status: 200, headers: { "content-type": "application/json" } },
       );
     }) as typeof fetch;
 
-    const output = await synthesize("What changed in Bun?", sampleResults);
+    const result = await synthesize("What is Queryx?", sampleResults, { apiKey: "test-key" });
 
-    expect(output.answer).toContain("Bun");
-    expect(output.confidence).toBe(1);
-    expect(output.tokens).toEqual({ in: 120, out: 25 });
-    expect(output.model).toBe("gpt-4o-mini");
+    expect(result.confidence).toBe(1);
+    expect(result.tokens.in).toBe(120);
+    expect(result.tokens.out).toBe(45);
+    expect(result.model).toBe("gpt-4o-mini-2026");
   });
 
-  it("estimates tokens when usage is missing and keeps confidence in range", async () => {
-    (globalThis as { fetch: typeof fetch }).fetch = (async () => {
+  test("estimates token usage when upstream usage is missing", async () => {
+    globalThis.fetch = (async () => {
       return new Response(
         JSON.stringify({
           model: "gpt-4o-mini",
@@ -77,21 +61,21 @@ describe("synth.ts", () => {
             {
               message: {
                 content: JSON.stringify({
-                  answer: "Evidence indicates improved runtime performance and DX updates.",
+                  answer: "There is not enough information to fully answer this.",
+                  confidence: -0.5,
                 }),
               },
             },
           ],
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
+        { status: 200, headers: { "content-type": "application/json" } },
       );
     }) as typeof fetch;
 
-    const output = await synthesize("Summarize the updates", sampleResults);
+    const result = await synthesize("unknown", sampleResults, { apiKey: "test-key" });
 
-    expect(output.tokens.in).toBeGreaterThan(0);
-    expect(output.tokens.out).toBeGreaterThan(0);
-    expect(output.confidence).toBeGreaterThanOrEqual(0);
-    expect(output.confidence).toBeLessThanOrEqual(1);
+    expect(result.confidence).toBe(0);
+    expect(result.tokens.in > 0).toBe(true);
+    expect(result.tokens.out > 0).toBe(true);
   });
 });

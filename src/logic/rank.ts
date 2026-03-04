@@ -1,27 +1,20 @@
 import type { SearchResult } from "./brave";
 
 export interface RankedSearchResult extends SearchResult {
+  qualityScore: number;
+  recencyScore: number;
   score: number;
 }
 
 export interface RankOptions {
-  maxPerDomain?: number;
-  minQualityScore?: number;
   now?: Date;
+  maxPerDomain?: number;
+  limit?: number;
+  minQuality?: number;
+  recencyHalfLifeDays?: number;
 }
 
-const TRACKING_PARAMS = new Set([
-  "utm_source",
-  "utm_medium",
-  "utm_campaign",
-  "utm_term",
-  "utm_content",
-  "fbclid",
-  "gclid"
-]);
-
-function normalizeDomain(url: string, existing?: string): string {
-  if (existing && existing.trim()) return existing.trim().toLowerCase();
+function normalizeDomain(url: string): string {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
     return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
@@ -30,116 +23,94 @@ function normalizeDomain(url: string, existing?: string): string {
   }
 }
 
-export function canonicalizeUrl(rawUrl: string): string {
-  try {
-    const url = new URL(rawUrl);
-    url.hash = "";
-
-    const kept = new URLSearchParams();
-    for (const [key, value] of url.searchParams.entries()) {
-      if (!TRACKING_PARAMS.has(key.toLowerCase())) {
-        kept.append(key, value);
-      }
-    }
-
-    url.search = kept.toString();
-    if (url.pathname !== "/" && url.pathname.endsWith("/")) {
-      url.pathname = url.pathname.slice(0, -1);
-    }
-
-    return url.toString();
-  } catch {
-    return rawUrl.trim();
-  }
-}
-
-function isLowQuality(result: SearchResult): boolean {
+function qualityScore(result: SearchResult): number {
   const titleLen = result.title.trim().length;
   const snippetLen = result.snippet.trim().length;
+  const hasValidUrl = /^https?:\/\//i.test(result.url.trim());
 
-  if (!result.url || titleLen < 8) return true;
-  if (snippetLen < 25) return true;
-  if (/^(home|index|untitled)$/i.test(result.title.trim())) return true;
+  if (!titleLen || !snippetLen || !hasValidUrl) {
+    return 0;
+  }
 
-  return false;
+  const titleComponent = Math.min(titleLen / 80, 1) * 0.35;
+  const snippetComponent = Math.min(snippetLen / 240, 1) * 0.45;
+  const urlComponent = 0.2;
+
+  let score = titleComponent + snippetComponent + urlComponent;
+
+  if (snippetLen < 40) {
+    score *= 0.6;
+  }
+
+  if (/\/(tag|category|author)\//i.test(result.url)) {
+    score *= 0.85;
+  }
+
+  return Math.max(0, Math.min(1, score));
 }
 
-function recencyBoost(publishedAt: string | undefined, now: Date): number {
-  if (!publishedAt) return 0;
+function recencyScore(publishedAt: string | undefined, now: Date, halfLifeDays: number): number {
+  if (!publishedAt) {
+    return 0.2;
+  }
 
-  const timestamp = new Date(publishedAt).getTime();
-  if (Number.isNaN(timestamp)) return 0;
+  const ts = new Date(publishedAt).getTime();
+  if (Number.isNaN(ts)) {
+    return 0.2;
+  }
 
-  const ageDays = (now.getTime() - timestamp) / (1000 * 60 * 60 * 24);
+  const ageMs = Math.max(0, now.getTime() - ts);
+  const ageDays = ageMs / 86_400_000;
+  const lambda = Math.log(2) / Math.max(1, halfLifeDays);
 
-  if (ageDays < 0) return 0.02;
-  if (ageDays <= 1) return 0.25;
-  if (ageDays <= 7) return 0.18;
-  if (ageDays <= 30) return 0.12;
-  if (ageDays <= 90) return 0.06;
-  return 0;
+  return Math.exp(-lambda * ageDays);
 }
 
-function qualityScore(result: SearchResult): number {
-  const titleScore = Math.min(1, result.title.trim().length / 90) * 0.25;
-  const snippetScore = Math.min(1, result.snippet.trim().length / 260) * 0.5;
-  const httpsScore = result.url.startsWith("https://") ? 0.05 : 0;
-  const domainScore = result.domain ? 0.1 : 0;
+function scoreResult(result: SearchResult, now: Date, halfLifeDays: number): RankedSearchResult {
+  const q = qualityScore(result);
+  const r = recencyScore(result.publishedAt, now, halfLifeDays);
+  const score = q * 0.7 + r * 0.3;
 
-  return titleScore + snippetScore + httpsScore + domainScore;
+  return {
+    ...result,
+    sourceDomain: result.sourceDomain || normalizeDomain(result.url),
+    qualityScore: q,
+    recencyScore: r,
+    score,
+  };
 }
 
 export function rankResults(results: SearchResult[], options: RankOptions = {}): RankedSearchResult[] {
-  const maxPerDomain = options.maxPerDomain ?? 2;
-  const minQualityScore = options.minQualityScore ?? 0.35;
   const now = options.now ?? new Date();
+  const maxPerDomain = options.maxPerDomain ?? 2;
+  const limit = options.limit ?? 10;
+  const minQuality = options.minQuality ?? 0.3;
+  const halfLifeDays = options.recencyHalfLifeDays ?? 14;
 
-  const seenUrls = new Set<string>();
-  const filtered: SearchResult[] = [];
+  const scored = results
+    .map((r) => scoreResult(r, now, halfLifeDays))
+    .filter((r) => r.qualityScore >= minQuality && Boolean(r.sourceDomain));
 
-  for (const result of results) {
-    if (isLowQuality(result)) continue;
+  scored.sort((a, b) => b.score - a.score);
 
-    const canonicalUrl = canonicalizeUrl(result.url);
-    if (seenUrls.has(canonicalUrl)) continue;
-
-    seenUrls.add(canonicalUrl);
-    filtered.push({
-      ...result,
-      domain: normalizeDomain(result.url, result.domain)
-    });
-  }
-
-  const scored: RankedSearchResult[] = filtered
-    .map((result) => {
-      const score = qualityScore(result) + recencyBoost(result.publishedAt, now);
-      return {
-        ...result,
-        score: Number(score.toFixed(6))
-      };
-    })
-    .filter((result) => result.score >= minQualityScore)
-    .sort((a, b) => b.score - a.score);
-
-  const perDomainCount = new Map<string, number>();
-  const output: RankedSearchResult[] = [];
+  const domainCounts = new Map<string, number>();
+  const ranked: RankedSearchResult[] = [];
 
   for (const result of scored) {
-    const domain = result.domain || "unknown";
-    const current = perDomainCount.get(domain) ?? 0;
+    const domain = result.sourceDomain;
+    const count = domainCounts.get(domain) ?? 0;
 
-    if (current >= maxPerDomain) {
+    if (count >= maxPerDomain) {
       continue;
     }
 
-    perDomainCount.set(domain, current + 1);
-    output.push(result);
+    domainCounts.set(domain, count + 1);
+    ranked.push(result);
+
+    if (ranked.length >= limit) {
+      break;
+    }
   }
 
-  return output;
+  return ranked;
 }
-
-export default {
-  rankResults,
-  canonicalizeUrl
-};

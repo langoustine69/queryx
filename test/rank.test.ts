@@ -1,88 +1,67 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import type { SearchResult } from "../src/logic/brave";
 import { rankResults } from "../src/logic/rank";
-import type { SearchResult } from "../src/logic/types";
 
 describe("rank.ts", () => {
-  it("deduplicates by canonical URL and caps results per domain", () => {
-    const now = new Date("2026-03-04T00:00:00.000Z");
+  test("deduplicates to max 2 results per domain", () => {
     const input: SearchResult[] = [
       {
         title: "A1",
-        url: "https://example.com/post?id=1&utm_source=x",
-        snippet: "A long, useful snippet with enough context to pass quality thresholds.",
-        domain: "example.com",
+        url: "https://a.com/1",
+        snippet: "Detailed explanation about queryx ranking system and internals.",
+        sourceDomain: "a.com",
         publishedAt: "2026-03-03T00:00:00.000Z",
-      },
-      {
-        title: "A1 duplicate canonical",
-        url: "https://example.com/post?id=1&utm_source=y",
-        snippet: "Duplicate URL once utm params are removed.",
-        domain: "example.com",
-        publishedAt: "2026-03-02T00:00:00.000Z",
       },
       {
         title: "A2",
-        url: "https://example.com/post-2",
-        snippet: "Another strong snippet that should be retained.",
-        domain: "example.com",
-        publishedAt: "2026-03-01T00:00:00.000Z",
+        url: "https://a.com/2",
+        snippet: "Another detailed explanation about queryx ranking and scoring.",
+        sourceDomain: "a.com",
+        publishedAt: "2026-03-02T00:00:00.000Z",
       },
       {
         title: "A3",
-        url: "https://example.com/post-3",
-        snippet: "Would exceed the per-domain cap.",
-        domain: "example.com",
-        publishedAt: "2026-02-28T00:00:00.000Z",
+        url: "https://a.com/3",
+        snippet: "Third article on same domain with enough content to be valid.",
+        sourceDomain: "a.com",
+        publishedAt: "2026-03-01T00:00:00.000Z",
       },
       {
         title: "B1",
-        url: "https://other.net/news",
-        snippet: "Different domain with quality content and unique perspective.",
-        domain: "other.net",
-        publishedAt: "2026-03-02T00:00:00.000Z",
+        url: "https://b.com/1",
+        snippet: "Strong alternative source from another domain with good details.",
+        sourceDomain: "b.com",
+        publishedAt: "2026-03-01T00:00:00.000Z",
       },
     ];
 
-    const ranked = rankResults(input, {
-      now,
-      maxPerDomain: 2,
-      minQualityScore: 0.1,
-    });
+    const ranked = rankResults(input, { maxPerDomain: 2, limit: 10, now: new Date("2026-03-04T00:00:00.000Z") });
+    const aCount = ranked.filter((r) => r.sourceDomain === "a.com").length;
 
-    const uniqueUrls = new Set(ranked.map((r) => r.url));
-    const fromExample = ranked.filter((r) => r.domain === "example.com");
-
-    expect(uniqueUrls.size).toBe(ranked.length);
-    expect(fromExample.length).toBeLessThanOrEqual(2);
+    expect(aCount).toBe(2);
   });
 
-  it("boosts newer results when quality is similar", () => {
-    const now = new Date("2026-03-04T00:00:00.000Z");
-
+  test("applies recency boost", () => {
     const input: SearchResult[] = [
       {
-        title: "Fresh result",
-        url: "https://fresh.io/a",
-        snippet: "Detailed and high-quality context for the same topic.",
-        domain: "fresh.io",
-        publishedAt: "2026-03-03T00:00:00.000Z",
+        title: "Older source",
+        url: "https://old.com/post",
+        snippet: "Comprehensive but old content about queryx architecture and usage.",
+        sourceDomain: "old.com",
+        publishedAt: "2020-01-01T00:00:00.000Z",
       },
       {
-        title: "Old result",
-        url: "https://archive.io/b",
-        snippet: "Detailed and high-quality context for the same topic.",
-        domain: "archive.io",
-        publishedAt: "2024-01-01T00:00:00.000Z",
+        title: "Recent source",
+        url: "https://new.com/post",
+        snippet: "Comprehensive and recent content about queryx architecture and usage.",
+        sourceDomain: "new.com",
+        publishedAt: "2026-03-03T00:00:00.000Z",
       },
     ];
 
-    const ranked = rankResults(input, {
-      now,
-      maxPerDomain: 2,
-      minQualityScore: 0.1,
-    });
+    const ranked = rankResults(input, { now: new Date("2026-03-04T00:00:00.000Z") });
 
-    expect(ranked[0].title).toBe("Fresh result");
-    expect(ranked[0].recencyScore).toBeGreaterThan(ranked[1].recencyScore);
+    expect(ranked[0]?.sourceDomain).toBe("new.com");
+    expect(ranked[0]?.score > ranked[1]?.score).toBe(true);
   });
 });
