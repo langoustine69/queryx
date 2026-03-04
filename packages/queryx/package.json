@@ -1,0 +1,31 @@
+{
+  "name": "@langoustine69/queryx",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./app": "./src/app.ts"
+  },
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "test": "bun test",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lucid-agents/a2a": "workspace:*",
+    "@lucid-agents/ap2": "workspace:*",
+    "@lucid-agents/core": "workspace:*",
+    "@lucid-agents/http": "workspace:*",
+    "@lucid-agents/identity": "workspace:*",
+    "@lucid-agents/payments": "workspace:*",
+    "@lucid-agents/wallet": "workspace:*",
+    "hono": "^4.7.20",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.3"
+  }
+}
