@@ -8,161 +8,194 @@
       name="description"
       content="Queryx is an agent-native search API with x402 micropayments on Base. Search the web, pay per query, no accounts."
     />
+    <meta name="theme-color" content="#0a0a0a" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <header class="site-header">
-      <div class="container nav">
-        <a class="brand" href="#top" aria-label="Queryx home">Queryx</a>
-        <a class="github-link" href="https://github.com/langoustine69/queryx" target="_blank" rel="noreferrer noopener">
-          GitHub
-        </a>
+    <header class="hero">
+      <div class="container">
+        <nav class="topbar" aria-label="Primary">
+          <a class="brand" href="#top" aria-label="Queryx home">Queryx</a>
+          <ul class="nav-links">
+            <li><a href="#pricing">Pricing</a></li>
+            <li><a href="#quickstart">Quick start</a></li>
+            <li><a href="#how">How it works</a></li>
+          </ul>
+        </nav>
+
+        <div class="hero-content" id="top">
+          <p class="eyebrow">Agent-native search API</p>
+          <h1>Search the web. Pay per query. No accounts.</h1>
+          <p class="subheadline">
+            Queryx uses x402 micropayments on Base so your agents can buy search
+            results in real time from <strong>$0.001/query</strong> — no API keys
+            to provision, no monthly lock-in.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#quickstart">Start in 30 seconds</a>
+            <a
+              class="btn btn-ghost"
+              href="https://github.com/langoustine69/queryx"
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              GitHub
+            </a>
+          </div>
+        </div>
       </div>
     </header>
 
-    <main id="top">
-      <section class="hero container">
-        <p class="eyebrow">Agent-native search API</p>
-        <h1>Search the web. Pay per query. No accounts.</h1>
-        <p class="subheadline">
-          Built for agents with x402 micropayments on Base. Start at <strong>$0.001/query</strong> for fast, structured web results.
-        </p>
-        <div class="hero-actions">
-          <a class="btn btn-primary" href="#pricing">View pricing</a>
-          <a class="btn btn-secondary" href="#quickstart">Quick start</a>
-        </div>
-      </section>
+    <main>
+      <section id="pricing" class="section">
+        <div class="container">
+          <h2>Simple, transparent pricing</h2>
+          <p class="section-copy">
+            Same interface, different depth levels. Pay only for what you call.
+          </p>
 
-      <section class="container section" id="pricing" aria-labelledby="pricing-title">
-        <div class="section-head">
-          <h2 id="pricing-title">Pricing</h2>
-          <p>Simple endpoint pricing with transparent per-query costs.</p>
-        </div>
+          <div class="pricing-grid" role="list" aria-label="Queryx endpoint pricing">
+            <article class="card" role="listitem">
+              <div class="card-head">
+                <h3>/v1/search</h3>
+                <p class="price">$0.001<span>/query</span></p>
+              </div>
+              <p class="card-copy">Fast general web search for most agent workflows.</p>
+              <p class="competitor">
+                Competitors: Perplexity $0.005–$0.014 · Tavily $0.004
+              </p>
+            </article>
 
-        <div class="pricing-grid">
-          <article class="card endpoint-card">
-            <h3>/v1/search</h3>
-            <p class="price">$0.001 <span>/query</span></p>
-            <p class="muted">General web search with structured JSON output.</p>
-          </article>
+            <article class="card" role="listitem">
+              <div class="card-head">
+                <h3>/v1/search/news</h3>
+                <p class="price">$0.001<span>/query</span></p>
+              </div>
+              <p class="card-copy">Fresh news-focused retrieval with structured output.</p>
+              <p class="competitor">
+                Competitors: Perplexity $0.005–$0.014 · Tavily $0.004
+              </p>
+            </article>
 
-          <article class="card endpoint-card">
-            <h3>/v1/search/news</h3>
-            <p class="price">$0.001 <span>/query</span></p>
-            <p class="muted">Fresh news-focused retrieval for real-time tasks.</p>
-          </article>
-
-          <article class="card endpoint-card">
-            <h3>/v1/search/deep</h3>
-            <p class="price">$0.005 <span>/query</span></p>
-            <p class="muted">Deeper multi-source search for higher-context answers.</p>
-          </article>
-        </div>
-
-        <div class="card comparison" role="region" aria-label="Competitor pricing comparison">
-          <h3>Competitor comparison</h3>
-          <div class="comparison-rows">
-            <div class="row">
-              <span>Queryx (/v1/search, /v1/search/news)</span>
-              <strong>$0.001</strong>
-            </div>
-            <div class="row">
-              <span>Queryx (/v1/search/deep)</span>
-              <strong>$0.005</strong>
-            </div>
-            <div class="row competitor">
-              <span>Perplexity</span>
-              <strong>$0.005 – $0.014</strong>
-            </div>
-            <div class="row competitor">
-              <span>Tavily</span>
-              <strong>$0.004</strong>
-            </div>
+            <article class="card" role="listitem">
+              <div class="card-head">
+                <h3>/v1/search/deep</h3>
+                <p class="price">$0.005<span>/query</span></p>
+              </div>
+              <p class="card-copy">Deeper multi-source retrieval for high-confidence tasks.</p>
+              <p class="competitor">
+                Competitors: Perplexity $0.005–$0.014 · Tavily $0.004
+              </p>
+            </article>
           </div>
         </div>
       </section>
 
-      <section class="container section" id="quickstart" aria-labelledby="quickstart-title">
-        <div class="section-head">
-          <h2 id="quickstart-title">Quick start</h2>
-          <p>Send a query, include x402 payment proof on Base, get clean structured results.</p>
-        </div>
+      <section id="quickstart" class="section">
+        <div class="container">
+          <h2>Quick start</h2>
+          <p class="section-copy">
+            Drop in a request, attach x402 payment context on Base, and receive
+            structured JSON.
+          </p>
 
-        <div class="card code-wrap">
-          <pre><code>curl -X POST "$QUERYX_BASE_URL/v1/search" \
+          <div class="code-shell">
+            <div class="code-toolbar">
+              <span>curl</span>
+              <button id="copy-btn" class="copy-btn" type="button" aria-live="polite">
+                Copy
+              </button>
+            </div>
+            <pre><code id="curl-code">curl -sS "$QUERYX_BASE_URL/v1/search" \
+  -X POST \
   -H "Content-Type: application/json" \
-  -H "X-402-PAYMENT: &lt;base_payment_proof&gt;" \
+  -H "X402-Network: base" \
+  -H "X402-Max-Price: 0.001" \
   -d '{
-    "query": "latest agent framework updates",
-    "max_results": 5
+    "q": "latest ai agent evaluation benchmarks",
+    "limit": 5
   }'</code></pre>
+          </div>
 
-          <details class="response-details">
-            <summary>Show sample JSON response</summary>
+          <details class="json-details">
+            <summary>Sample JSON response</summary>
             <pre><code>{
-  "query": "latest agent framework updates",
+  "query": "latest ai agent evaluation benchmarks",
+  "endpoint": "/v1/search",
+  "cost_usd": 0.001,
+  "network": "base",
   "results": [
     {
-      "title": "Framework Release Notes",
-      "url": "https://example.com/release-notes",
-      "snippet": "New tooling for memory, evals, and function calling..."
-    },
-    {
-      "title": "Agent Infrastructure Trends",
-      "url": "https://example.com/agent-trends",
-      "snippet": "A 2026 overview of practical agent deployment patterns..."
+      "title": "Comprehensive agent benchmark roundup",
+      "url": "https://example.com/benchmarks",
+      "snippet": "A side-by-side view of modern agent eval suites...",
+      "published_at": "2026-02-26T10:11:12Z"
     }
-  ],
-  "meta": {
-    "endpoint": "/v1/search",
-    "cost_usd": 0.001,
-    "network": "Base",
-    "payment": "x402"
-  }
+  ]
 }</code></pre>
           </details>
         </div>
       </section>
 
-      <section class="container section" id="how-it-works" aria-labelledby="how-title">
-        <div class="section-head">
-          <h2 id="how-title">How it works</h2>
-        </div>
-
-        <div class="steps">
-          <article class="card step">
-            <span class="step-num">1</span>
-            <h3>Send query</h3>
-            <p>Call a Queryx endpoint with your search payload.</p>
-          </article>
-
-          <article class="card step">
-            <span class="step-num">2</span>
-            <h3>x402 payment on Base</h3>
-            <p>Attach payment proof for exactly one request.</p>
-          </article>
-
-          <article class="card step">
-            <span class="step-num">3</span>
-            <h3>Get structured JSON</h3>
-            <p>Receive concise, machine-friendly search results.</p>
-          </article>
+      <section id="how" class="section">
+        <div class="container">
+          <h2>How it works</h2>
+          <div class="steps" role="list" aria-label="How Queryx works">
+            <article class="step" role="listitem">
+              <span class="step-index">1</span>
+              <h3>Send query</h3>
+              <p>Your agent calls a Queryx endpoint with a natural-language query.</p>
+            </article>
+            <article class="step" role="listitem">
+              <span class="step-index">2</span>
+              <h3>x402 payment on Base</h3>
+              <p>Payment is settled via x402 on Base at the request-level price.</p>
+            </article>
+            <article class="step" role="listitem">
+              <span class="step-index">3</span>
+              <h3>Get structured JSON</h3>
+              <p>Receive clean, machine-usable results ready for your workflow.</p>
+            </article>
+          </div>
         </div>
       </section>
     </main>
 
-    <footer class="site-footer">
-      <div class="container footer-content">
-        <a href="https://github.com/langoustine69/queryx" target="_blank" rel="noreferrer noopener">GitHub</a>
-        <span>Built by @langoustine69</span>
-        <span>© <span id="year"></span> Queryx</span>
+    <footer class="footer">
+      <div class="container footer-inner">
+        <a
+          href="https://github.com/langoustine69/queryx"
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          GitHub
+        </a>
+        <p>Built by @langoustine69</p>
       </div>
     </footer>
 
     <script>
       (function () {
-        var yearEl = document.getElementById('year');
-        if (yearEl) yearEl.textContent = String(new Date().getFullYear());
+        var copyBtn = document.getElementById("copy-btn");
+        var curlCode = document.getElementById("curl-code");
+        if (!copyBtn || !curlCode || !navigator.clipboard) return;
+
+        copyBtn.addEventListener("click", function () {
+          navigator.clipboard.writeText(curlCode.textContent || "").then(
+            function () {
+              copyBtn.textContent = "Copied";
+              window.setTimeout(function () {
+                copyBtn.textContent = "Copy";
+              }, 1400);
+            },
+            function () {
+              copyBtn.textContent = "Failed";
+              window.setTimeout(function () {
+                copyBtn.textContent = "Copy";
+              }, 1400);
+            }
+          );
+        });
       })();
     </script>
   </body>
