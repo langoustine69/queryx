@@ -1,236 +1,189 @@
-export type Freshness = "day" | "week" | "month";
+import type { Freshness, SearchResult } from "./types";
 
-export interface SearchResult {
-  title: string;
-  url: string;
-  description: string;
-  sourceDomain: string;
-  publishedAt?: string;
-  score?: number;
-}
-
-export interface BraveSearchOptions {
-  apiKey?: string;
-  endpoint?: string;
-  fetchImpl?: typeof fetch;
-  signal?: AbortSignal;
+export interface BraveSearchParams {
+  query: string;
   count?: number;
-  offset?: number;
+  freshness?: Freshness;
   country?: string;
   language?: string;
-  freshness?: Freshness;
+  safeSearch?: "off" | "moderate" | "strict";
+  timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
-type JsonRecord = Record<string, unknown>;
+export class BraveApiError extends Error {
+  status: number;
+  body?: string;
 
-const FRESHNESS_PARAM_MAP: Record<Freshness, string> = {
-  day: "pd",
-  week: "pw",
-  month: "pm",
-};
-
-export class BraveAPIError extends Error {
-  public readonly status: number;
-  public readonly details?: unknown;
-
-  constructor(message: string, status: number, details?: unknown) {
+  constructor(message: string, status = 500, body?: string) {
     super(message);
-    this.name = "BraveAPIError";
+    this.name = "BraveApiError";
     this.status = status;
-    this.details = details;
+    this.body = body;
   }
 }
 
-export class BraveRateLimitError extends BraveAPIError {
-  public readonly retryAfterSeconds?: number;
+export class BraveRateLimitError extends BraveApiError {
+  retryAfterSeconds: number | null;
 
-  constructor(message: string, retryAfterSeconds?: number, details?: unknown) {
-    super(message, 429, details);
+  constructor(retryAfterSeconds: number | null, body?: string) {
+    super("Brave API rate limit exceeded", 429, body);
     this.name = "BraveRateLimitError";
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === "object" && value !== null;
-}
+const FRESHNESS_MAP: Record<Freshness, string> = {
+  day: "pd",
+  week: "pw",
+  month: "pm",
+};
 
-function parsePublishedAt(raw: unknown): string | undefined {
-  if (typeof raw === "number" && Number.isFinite(raw)) {
-    const milliseconds = raw > 1_000_000_000_000 ? raw : raw * 1000;
-    const date = new Date(milliseconds);
-    return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-  }
+function normalizeDomain(input: string): string {
+  const cleaned = input.trim().toLowerCase();
+  if (!cleaned) return "";
 
-  if (typeof raw === "string" && raw.trim().length > 0) {
-    const date = new Date(raw);
-    return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-  }
-
-  return undefined;
-}
-
-function getDomainFromUrl(rawUrl: string): string | undefined {
   try {
-    const parsed = new URL(rawUrl);
-    return parsed.hostname.replace(/^www\./i, "").toLowerCase();
+    const parsed = new URL(cleaned.startsWith("http") ? cleaned : `https://${cleaned}`);
+    return parsed.hostname.replace(/^www\./, "");
   } catch {
-    return undefined;
+    return cleaned.replace(/^www\./, "");
   }
 }
 
-function clamp01(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(1, value));
+function toIsoDate(input: unknown): string | undefined {
+  if (typeof input !== "string" || input.trim().length === 0) return undefined;
+  const timestamp = Date.parse(input);
+  if (Number.isNaN(timestamp)) return undefined;
+  return new Date(timestamp).toISOString();
 }
 
-async function parseErrorBody(response: Response): Promise<unknown> {
-  const contentType = response.headers.get("content-type") ?? "";
-  try {
-    if (contentType.includes("application/json")) {
-      return await response.json();
-    }
-    return await response.text();
-  } catch {
-    return undefined;
-  }
+function parseResult(item: any): SearchResult | null {
+  const url = typeof item?.url === "string" ? item.url.trim() : "";
+  const title = typeof item?.title === "string" ? item.title.trim() : "";
+  const snippet = typeof item?.description === "string" ? item.description.trim() : "";
+
+  if (!url || !title) return null;
+
+  const domainInput =
+    typeof item?.meta_url?.hostname === "string" && item.meta_url.hostname.trim().length > 0
+      ? item.meta_url.hostname
+      : url;
+
+  return {
+    title,
+    url,
+    snippet,
+    domain: normalizeDomain(domainInput),
+    publishedAt: toIsoDate(item?.page_fetched) ?? toIsoDate(item?.published) ?? toIsoDate(item?.date),
+    source: "brave",
+  };
 }
 
-export function mapFreshnessParam(freshness: Freshness): string {
-  return FRESHNESS_PARAM_MAP[freshness];
-}
-
-export function normalizeBraveResults(payload: unknown): SearchResult[] {
-  if (!isRecord(payload)) return [];
-
-  const web = payload.web;
-  if (!isRecord(web)) return [];
-
-  const results = web.results;
-  if (!Array.isArray(results)) return [];
+export function normalizeBraveResponse(payload: unknown): SearchResult[] {
+  const rawResults = (payload as any)?.web?.results;
+  if (!Array.isArray(rawResults)) return [];
 
   const normalized: SearchResult[] = [];
-
-  for (const item of results) {
-    if (!isRecord(item)) continue;
-
-    const url = typeof item.url === "string" ? item.url.trim() : "";
-    const domain = getDomainFromUrl(url);
-    if (!domain) continue;
-
-    const title = typeof item.title === "string" ? item.title.trim() : "";
-    if (!title) continue;
-
-    const description =
-      typeof item.description === "string" ? item.description.trim() : "";
-
-    const publishedAt =
-      parsePublishedAt(item.page_age) ??
-      parsePublishedAt(item.published) ??
-      parsePublishedAt(item.date) ??
-      parsePublishedAt(item.age);
-
-    const scoreRaw =
-      typeof item.score === "number" ? item.score : Number(item.score);
-    const score = Number.isFinite(scoreRaw) ? clamp01(scoreRaw) : undefined;
-
-    normalized.push({
-      title,
-      url,
-      description,
-      sourceDomain: domain,
-      ...(publishedAt ? { publishedAt } : {}),
-      ...(score !== undefined ? { score } : {}),
-    });
+  for (const item of rawResults) {
+    const parsed = parseResult(item);
+    if (parsed) normalized.push(parsed);
   }
-
   return normalized;
 }
 
-export async function searchBrave(
-  query: string,
-  options: BraveSearchOptions = {},
-): Promise<SearchResult[]> {
-  const q = query.trim();
-  if (!q) return [];
-
-  const apiKey = options.apiKey ?? process.env.BRAVE_API_KEY;
-  if (!apiKey) {
-    throw new BraveAPIError("Missing BRAVE_API_KEY", 0);
-  }
-
-  const endpoint = options.endpoint ?? process.env.BRAVE_API_URL;
-  if (!endpoint) {
-    throw new BraveAPIError("Missing BRAVE_API_URL", 0);
-  }
-
-  const params = new URLSearchParams();
-  params.set("q", q);
-  params.set("source", "web");
-  params.set("count", String(options.count ?? 10));
-
-  if (typeof options.offset === "number" && options.offset >= 0) {
-    params.set("offset", String(options.offset));
-  }
-  if (options.country) {
-    params.set("country", options.country);
-  }
-  if (options.language) {
-    params.set("search_lang", options.language);
-  }
-  if (options.freshness) {
-    params.set("freshness", mapFreshnessParam(options.freshness));
-  }
-
-  const target = `${endpoint}?${params.toString()}`;
-  const fetchImpl = options.fetchImpl ?? fetch;
-
-  let response: Response;
+async function readResponseTextSafe(response: Response): Promise<string> {
   try {
-    response = await fetchImpl(target, {
+    return await response.text();
+  } catch {
+    return "";
+  }
+}
+
+export async function searchBrave(params: BraveSearchParams): Promise<SearchResult[]> {
+  const query = params.query?.trim();
+  if (!query) {
+    throw new BraveApiError("Query is required", 400);
+  }
+
+  const apiKey = process.env.BRAVE_API_KEY;
+  if (!apiKey) {
+    throw new BraveApiError("Missing BRAVE_API_KEY", 500);
+  }
+
+  const endpoint = process.env.BRAVE_API_URL ?? "https://api.search.brave.com/res/v1/web/search";
+
+  const queryParams = new URLSearchParams();
+  queryParams.set("q", query);
+  queryParams.set("count", String(params.count ?? 10));
+  if (params.country) queryParams.set("country", params.country);
+  if (params.language) queryParams.set("search_lang", params.language);
+  if (params.safeSearch) queryParams.set("safesearch", params.safeSearch);
+  if (params.freshness) queryParams.set("freshness", FRESHNESS_MAP[params.freshness]);
+
+  const url = `${endpoint}?${queryParams.toString()}`;
+
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let externalAbortListener: (() => void) | undefined;
+
+  if (params.signal) {
+    if (params.signal.aborted) {
+      controller.abort();
+    } else {
+      externalAbortListener = () => controller.abort();
+      params.signal.addEventListener("abort", externalAbortListener, { once: true });
+    }
+  }
+
+  if (params.timeoutMs && params.timeoutMs > 0) {
+    timeout = setTimeout(() => controller.abort(), params.timeoutMs);
+  }
+
+  try {
+    const response = await fetch(url, {
       method: "GET",
-      signal: options.signal,
       headers: {
         Accept: "application/json",
         "X-Subscription-Token": apiKey,
       },
+      signal: controller.signal,
     });
+
+    if (response.status === 429) {
+      const retryAfterRaw = response.headers.get("retry-after");
+      const retryAfterSeconds = retryAfterRaw ? Number.parseInt(retryAfterRaw, 10) : null;
+      const body = await readResponseTextSafe(response);
+      throw new BraveRateLimitError(Number.isNaN(retryAfterSeconds as number) ? null : retryAfterSeconds, body);
+    }
+
+    if (!response.ok) {
+      const body = await readResponseTextSafe(response);
+      throw new BraveApiError(`Brave API request failed with status ${response.status}`, response.status, body);
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new BraveApiError("Invalid JSON from Brave API", response.status);
+    }
+
+    return normalizeBraveResponse(payload);
   } catch (error) {
-    throw new BraveAPIError("Failed to reach Brave Search API", 0, error);
+    if (error instanceof BraveApiError) throw error;
+    if ((error as Error)?.name === "AbortError") {
+      throw new BraveApiError("Brave API request timed out or was aborted", 408);
+    }
+    throw new BraveApiError(`Brave API request failed: ${(error as Error)?.message ?? "Unknown error"}`, 500);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    if (externalAbortListener && params.signal) {
+      params.signal.removeEventListener("abort", externalAbortListener);
+    }
   }
-
-  if (response.status === 429) {
-    const retryAfterHeader = response.headers.get("retry-after");
-    const retryAfterSeconds = retryAfterHeader
-      ? Number(retryAfterHeader)
-      : undefined;
-    throw new BraveRateLimitError(
-      "Brave Search API rate limit exceeded",
-      Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : undefined,
-      await parseErrorBody(response),
-    );
-  }
-
-  if (!response.ok) {
-    throw new BraveAPIError(
-      `Brave Search API request failed with status ${response.status}`,
-      response.status,
-      await parseErrorBody(response),
-    );
-  }
-
-  let jsonPayload: unknown;
-  try {
-    jsonPayload = await response.json();
-  } catch (error) {
-    throw new BraveAPIError(
-      "Brave Search API returned invalid JSON",
-      response.status,
-      error,
-    );
-  }
-
-  return normalizeBraveResults(jsonPayload);
 }
 
+export const braveSearch = searchBrave;
+export const search = searchBrave;
 export default searchBrave;

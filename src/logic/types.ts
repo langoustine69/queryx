@@ -3,10 +3,21 @@ export type Freshness = "day" | "week" | "month";
 export interface SearchResult {
   title: string;
   url: string;
-  description: string;
-  source: string;
+  snippet: string;
   domain: string;
   publishedAt?: string;
-  favicon?: string;
   score?: number;
+  source?: string;
+}
+
+export interface TokenUsage {
+  in: number;
+  out: number;
+}
+
+export interface SynthesisResult {
+  answer: string;
+  confidence: number;
+  tokens: TokenUsage;
+  model: string;
 }
