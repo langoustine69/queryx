@@ -15,8 +15,8 @@
   --muted: #71717a;
   --green: #10b981;
   --red: #ef4444;
-  --font: 'Inter', system-ui, -apple-system, sans-serif;
-  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, 'Fira Code', 'Cascadia Code', Consolas, monospace;
 }
 
 html {
