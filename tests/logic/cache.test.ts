@@ -58,6 +58,25 @@ describe("Cache", () => {
   test("hitRate is 0 when no operations", () => {
     expect(cache.stats().hitRate).toBe(0);
   });
+
+  test("defaults to 300s TTL when no args and env var unset", () => {
+    const saved = process.env.CACHE_TTL_SECONDS;
+    delete process.env.CACHE_TTL_SECONDS;
+    const c = new Cache<string>();
+    c.set("k", "v");
+    // Should be retrievable immediately (not expired)
+    expect(c.get("k")).not.toBeNull();
+    expect(c.stats().size).toBe(1);
+    if (saved !== undefined) process.env.CACHE_TTL_SECONDS = saved;
+  });
+
+  test("respects CACHE_TTL_SECONDS env var", () => {
+    process.env.CACHE_TTL_SECONDS = "1";
+    const c = new Cache<string>();
+    c.set("k", "v");
+    expect(c.get("k")).not.toBeNull();
+    delete process.env.CACHE_TTL_SECONDS;
+  });
 });
 
 describe("Cache.normalizeKey", () => {

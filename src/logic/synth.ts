@@ -106,13 +106,14 @@ export async function synthesise(
   const choice = body.choices?.[0];
   const usage = body.usage ?? {};
 
+  const answerText = choice?.message?.content;
+  if (!answerText) {
+    throw new Error("OpenAI returned an empty response");
+  }
   return {
-    answer: choice?.message?.content ?? "No answer generated.",
+    answer: answerText,
     confidence: scoreConfidence(sources),
-    tokens: {
-      in: usage.prompt_tokens ?? 0,
-      out: usage.completion_tokens ?? 0,
-    },
+    tokens: { in: usage.prompt_tokens ?? 0, out: usage.completion_tokens ?? 0 },
     model,
   };
 }

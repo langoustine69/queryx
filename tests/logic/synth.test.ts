@@ -76,4 +76,10 @@ describe("scoreConfidence", () => {
 
     expect(scoreAgree).toBeGreaterThan(scoreDisagree);
   });
+
+  test("single source scores lower than multiple sources", () => {
+    const one = [makeSource()];
+    const three = [makeSource(), makeSource(), makeSource()];
+    expect(scoreConfidence(three)).toBeGreaterThan(scoreConfidence(one));
+  });
 });
