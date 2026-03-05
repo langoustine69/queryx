@@ -22,7 +22,8 @@ export class Cache<T = any> {
   private ttlMs: number;
 
   constructor(ttlSeconds?: number) {
-    this.ttlMs = (ttlSeconds ?? Number(process.env.CACHE_TTL_SECONDS) ?? 300) * 1000;
+    const envTtl = Number(process.env.CACHE_TTL_SECONDS);
+    this.ttlMs = (ttlSeconds ?? (Number.isFinite(envTtl) ? envTtl : 300)) * 1000;
   }
 
   /**
