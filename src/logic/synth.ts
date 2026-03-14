@@ -1,118 +1,281 @@
-/**
- * GPT-4o-mini synthesis layer.
- * Takes query + search results, produces a concise answer with confidence scoring.
- */
-
 import type { SearchResult } from "./brave";
 
-export interface SynthResult {
+export interface SynthesisTokens {
+  in: number;
+  out: number;
+}
+
+export interface SynthesisResult {
   answer: string;
   confidence: number;
-  tokens: { in: number; out: number };
+  tokens: SynthesisTokens;
   model: string;
 }
 
-const SYSTEM_PROMPT = `You are a search synthesis engine for AI agents. Given a query and search results, produce a concise, factual answer.
-
-Rules:
-- Be direct and factual. No filler, no hedging.
-- Cite information from the provided sources.
-- If sources disagree, note the disagreement.
-- If sources are insufficient, say so clearly.
-- Keep answers under 300 words unless the query demands more.
-- Use ISO 8601 dates when referencing time.`;
-
-function buildUserPrompt(query: string, sources: SearchResult[]): string {
-  const sourceBlock = sources
-    .map(
-      (s, i) =>
-        `[${i + 1}] ${s.title}\n${s.url}\n${s.snippet}${s.published ? `\nPublished: ${s.published}` : ""}`,
-    )
-    .join("\n\n");
-
-  return `Query: ${query}\n\nSources:\n${sourceBlock}\n\nSynthesize an answer from these sources.`;
+export interface SynthesisOptions {
+  model?: string;
+  temperature?: number;
+  maxOutputTokens?: number;
+  signal?: AbortSignal;
 }
 
-export function scoreConfidence(sources: SearchResult[]): number {
-  if (sources.length === 0) return 0;
+export class SynthesisError extends Error {
+  public readonly status?: number;
+  public readonly details?: string;
 
-  let score = 0;
-
-  // Base score from number of sources (max 0.4)
-  score += Math.min(sources.length / 10, 0.4);
-
-  // Snippet quality (max 0.3)
-  const avgSnippetLen =
-    sources.reduce((sum, s) => sum + (s.snippet?.length ?? 0), 0) /
-    sources.length;
-  score += Math.min(avgSnippetLen / 500, 0.3);
-
-  // Source agreement - check overlap in snippets (max 0.2)
-  if (sources.length >= 2) {
-    const words0 = new Set(
-      (sources[0].snippet ?? "").toLowerCase().split(/\s+/),
-    );
-    const words1 = new Set(
-      (sources[1].snippet ?? "").toLowerCase().split(/\s+/),
-    );
-    const overlap = [...words0].filter((w) => words1.has(w)).length;
-    const overlapRatio = overlap / Math.max(words0.size, 1);
-    score += Math.min(overlapRatio, 0.2);
+  constructor(message: string, status?: number, details?: string) {
+    super(message);
+    this.name = "SynthesisError";
+    this.status = status;
+    this.details = details;
   }
-
-  // Recency bonus (max 0.1)
-  const hasPublished = sources.some((s) => s.published);
-  if (hasPublished) score += 0.1;
-
-  return Math.min(Math.max(score, 0), 1);
 }
 
-export async function synthesise(
-  query: string,
-  sources: SearchResult[],
-): Promise<SynthResult> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is required");
+const DEFAULT_MODEL = "gpt-4o-mini";
+
+const SYSTEM_PROMPT =
+  "You are a synthesis engine for downstream agents. Return only JSON with shape " +
+  '{"answer":"string","confidence":0..1}. ' +
+  "Use concise factual prose, include caveats only when required, and avoid markdown.";
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, value));
+}
+
+function estimateTokens(text: string): number {
+  const normalized = text.trim();
+  if (normalized === "") {
+    return 0;
+  }
+  return Math.max(1, Math.ceil(normalized.length / 4));
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function buildSourcesPayload(results: SearchResult[]): Array<Record<string, string>> {
+  return results.slice(0, 10).map((item) => ({
+    title: item.title,
+    url: item.url,
+    snippet: item.snippet,
+    source: item.source,
+    publishedDate: item.publishedDate ?? "",
+  }));
+}
+
+function buildUserPrompt(query: string, results: SearchResult[]): string {
+  const payload = {
+    query,
+    sources: buildSourcesPayload(results),
+    instructions: [
+      "Synthesize only from provided sources.",
+      "If evidence is weak, lower confidence.",
+      "Avoid hedging unless uncertainty is material.",
+    ],
+  };
+
+  return JSON.stringify(payload);
+}
+
+function extractJsonObject(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = (fencedMatch?.[1] ?? trimmed).trim();
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+
+  if (start < 0 || end <= start) {
+    return null;
   }
 
-  const model = "gpt-4o-mini";
-  const userPrompt = buildUserPrompt(query, sources);
+  const jsonCandidate = candidate.slice(start, end + 1);
+  try {
+    const parsed = JSON.parse(jsonCandidate);
+    if (parsed && typeof parsed === "object") {
+      return parsed as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.3,
-      max_tokens: 800,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `OpenAI API error: ${response.status} ${response.statusText}`,
-    );
+function getAssistantText(payload: Record<string, unknown>): string {
+  if (typeof payload.output_text === "string") {
+    return payload.output_text;
   }
 
-  const body = await response.json();
-  const choice = body.choices?.[0];
-  const usage = body.usage ?? {};
+  const choices = payload.choices;
+  if (Array.isArray(choices) && choices.length > 0) {
+    const first = choices[0] as { message?: { content?: unknown } };
+    const content = first?.message?.content;
+
+    if (typeof content === "string") {
+      return content;
+    }
+
+    if (Array.isArray(content)) {
+      const parts = content
+        .map((part) => {
+          if (typeof part === "string") {
+            return part;
+          }
+          if (part && typeof part === "object" && "text" in part) {
+            const text = (part as { text?: unknown }).text;
+            return typeof text === "string" ? text : "";
+          }
+          return "";
+        })
+        .filter(Boolean);
+
+      return parts.join("\n").trim();
+    }
+  }
+
+  return "";
+}
+
+function parseAnswerAndConfidence(rawContent: string): { answer: string; confidence?: number } {
+  const json = extractJsonObject(rawContent);
+  if (!json) {
+    return { answer: rawContent.trim() };
+  }
+
+  const answer =
+    typeof json.answer === "string"
+      ? json.answer.trim()
+      : typeof json.final_answer === "string"
+        ? json.final_answer.trim()
+        : rawContent.trim();
+
+  const confidence = numberOrUndefined(json.confidence);
+  return { answer, confidence };
+}
+
+function heuristicConfidence(query: string, results: SearchResult[], answer: string): number {
+  let score = 0.3;
+  score += Math.min(results.length, 8) * 0.07;
+
+  if (query.trim().length > 20) {
+    score += 0.05;
+  }
+
+  if (answer.trim().length >= 80) {
+    score += 0.08;
+  }
+
+  if (results.length <= 1) {
+    score -= 0.12;
+  }
+
+  return clamp01(score);
+}
+
+function extractUsageTokens(payload: Record<string, unknown>): { in?: number; out?: number } {
+  const usage = payload.usage as Record<string, unknown> | undefined;
+  if (!usage) {
+    return {};
+  }
+
+  const inTokens = numberOrUndefined(usage.prompt_tokens) ?? numberOrUndefined(usage.input_tokens);
+  const outTokens = numberOrUndefined(usage.completion_tokens) ?? numberOrUndefined(usage.output_tokens);
 
   return {
-    answer: choice?.message?.content ?? "No answer generated.",
-    confidence: scoreConfidence(sources),
-    tokens: {
-      in: usage.prompt_tokens ?? 0,
-      out: usage.completion_tokens ?? 0,
-    },
-    model,
+    in: inTokens,
+    out: outTokens,
   };
 }
+
+async function safeReadText(response: Response): Promise<string | undefined> {
+  try {
+    const text = await response.text();
+    return text.trim() === "" ? undefined : text;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function synthesizeAnswer(
+  query: string,
+  results: SearchResult[],
+  options: SynthesisOptions = {},
+): Promise<SynthesisResult> {
+  const endpoint = process.env.OPENAI_API_URL;
+  if (!endpoint) {
+    throw new SynthesisError("OPENAI_API_URL is not configured.");
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new SynthesisError("OPENAI_API_KEY is not configured.");
+  }
+
+  const model = options.model ?? DEFAULT_MODEL;
+  const userPrompt = buildUserPrompt(query, results);
+
+  const requestBody = {
+    model,
+    temperature: options.temperature ?? 0.2,
+    max_tokens: options.maxOutputTokens ?? 350,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      signal: options.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown fetch error";
+    throw new SynthesisError(`Synthesis request failed: ${message}`);
+  }
+
+  if (!response.ok) {
+    const details = await safeReadText(response);
+    throw new SynthesisError(`Synthesis API request failed with status ${response.status}.`, response.status, details);
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = (await response.json()) as Record<string, unknown>;
+  } catch {
+    throw new SynthesisError("Synthesis API returned invalid JSON.", response.status);
+  }
+
+  const rawContent = getAssistantText(payload).trim();
+  const parsed = parseAnswerAndConfidence(rawContent);
+
+  const answer = parsed.answer || "No answer generated.";
+  const confidence = clamp01(parsed.confidence ?? heuristicConfidence(query, results, answer));
+
+  const usage = extractUsageTokens(payload);
+  const tokenIn = usage.in ?? estimateTokens(SYSTEM_PROMPT + userPrompt);
+  const tokenOut = usage.out ?? estimateTokens(answer);
+
+  return {
+    answer,
+    confidence,
+    tokens: {
+      in: tokenIn,
+      out: tokenOut,
+    },
+    model: typeof payload.model === "string" ? payload.model : model,
+  };
+}
+
+export const synthesize = synthesizeAnswer;
+export default synthesizeAnswer;

@@ -1,127 +1,281 @@
-/**
- * Brave Search API client.
- * Wraps the Brave Web Search API and normalizes results.
- */
+export type Freshness = "day" | "week" | "month";
 
 export interface SearchResult {
   title: string;
   url: string;
   snippet: string;
-  published?: string;
+  source: string;
+  publishedDate?: string;
+  age?: string;
   score?: number;
 }
 
 export interface BraveSearchOptions {
-  freshness?: "day" | "week" | "month";
+  freshness?: Freshness;
   count?: number;
-  type?: "web" | "news";
+  offset?: number;
+  country?: string;
+  language?: string;
+  safeSearch?: "strict" | "moderate" | "off";
+  signal?: AbortSignal;
+}
+
+interface BraveWebResult {
+  title?: string;
+  url?: string;
+  description?: string;
+  extra_snippets?: string[];
+  age?: string;
+  page_age?: string | { age?: string; last_modified?: string };
+  score?: number;
 }
 
 export class BraveApiError extends Error {
-  constructor(
-    public statusCode: number,
-    message: string,
-  ) {
+  public readonly status: number;
+  public readonly details?: string;
+
+  constructor(message: string, status: number, details?: string) {
     super(message);
     this.name = "BraveApiError";
+    this.status = status;
+    this.details = details;
   }
 }
 
 export class BraveRateLimitError extends BraveApiError {
-  constructor() {
-    super(429, "Brave API rate limit exceeded");
+  public readonly retryAfterSeconds?: number;
+
+  constructor(message: string, retryAfterSeconds?: number, details?: string) {
+    super(message, 429, details);
     this.name = "BraveRateLimitError";
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
-export class BraveAuthError extends BraveApiError {
-  constructor() {
-    super(401, "Invalid Brave API key");
-    this.name = "BraveAuthError";
+const FRESHNESS_MAP: Record<Freshness, string> = {
+  day: "pd",
+  week: "pw",
+  month: "pm",
+};
+
+function clamp01(value: number): number {
+  if (Number.isNaN(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeScore(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value >= 0 && value <= 1) {
+    return clamp01(value);
+  }
+  if (value > 1 && value <= 100) {
+    return clamp01(value / 100);
+  }
+  return clamp01(value);
+}
+
+function parseRetryAfter(raw: string | null): number | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const asInt = Number.parseInt(raw, 10);
+  if (Number.isFinite(asInt) && asInt >= 0) {
+    return asInt;
+  }
+
+  const dateMs = Date.parse(raw);
+  if (Number.isNaN(dateMs)) {
+    return undefined;
+  }
+
+  const seconds = Math.ceil((dateMs - Date.now()) / 1000);
+  return seconds > 0 ? seconds : 0;
+}
+
+function extractDomain(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return "unknown";
   }
 }
 
-const BRAVE_API_BASE = "https://api.search.brave.com/res/v1";
+function normalizePublishedDate(pageAge: BraveWebResult["page_age"]): string | undefined {
+  if (!pageAge) {
+    return undefined;
+  }
 
-export async function braveSearch(
-  query: string,
-  opts?: BraveSearchOptions,
-): Promise<SearchResult[]> {
+  if (typeof pageAge === "object" && typeof pageAge.last_modified === "string") {
+    return pageAge.last_modified;
+  }
+
+  if (typeof pageAge === "string") {
+    const parsed = Date.parse(pageAge);
+    if (!Number.isNaN(parsed)) {
+      return new Date(parsed).toISOString();
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeAge(raw: BraveWebResult): string | undefined {
+  if (typeof raw.age === "string" && raw.age.trim() !== "") {
+    return raw.age;
+  }
+  if (typeof raw.page_age === "object" && typeof raw.page_age.age === "string") {
+    return raw.page_age.age;
+  }
+  return undefined;
+}
+
+function normalizeSnippet(raw: BraveWebResult): string {
+  const chunks: string[] = [];
+  if (typeof raw.description === "string" && raw.description.trim() !== "") {
+    chunks.push(raw.description.trim());
+  }
+  if (Array.isArray(raw.extra_snippets)) {
+    for (const snippet of raw.extra_snippets) {
+      if (typeof snippet === "string" && snippet.trim() !== "") {
+        chunks.push(snippet.trim());
+      }
+    }
+  }
+  return chunks.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeBraveResult(raw: BraveWebResult): SearchResult | null {
+  if (typeof raw.url !== "string" || raw.url.trim() === "") {
+    return null;
+  }
+
+  const title = typeof raw.title === "string" ? raw.title.trim() : "";
+  const snippet = normalizeSnippet(raw);
+
+  if (title === "" && snippet === "") {
+    return null;
+  }
+
+  return {
+    title,
+    url: raw.url,
+    snippet,
+    source: extractDomain(raw.url),
+    publishedDate: normalizePublishedDate(raw.page_age),
+    age: normalizeAge(raw),
+    score: normalizeScore(raw.score),
+  };
+}
+
+function buildRequestUrl(endpoint: string, params: URLSearchParams): string {
+  const separator = endpoint.includes("?") ? "&" : "?";
+  return `${endpoint}${separator}${params.toString()}`;
+}
+
+async function safeReadText(response: Response): Promise<string | undefined> {
+  try {
+    const text = await response.text();
+    return text.trim() === "" ? undefined : text;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function searchBrave(query: string, options: BraveSearchOptions = {}): Promise<SearchResult[]> {
+  const normalizedQuery = query.trim();
+  if (normalizedQuery === "") {
+    return [];
+  }
+
+  const endpoint = process.env.BRAVE_API_URL;
+  if (!endpoint) {
+    throw new Error("BRAVE_API_URL is not configured.");
+  }
+
   const apiKey = process.env.BRAVE_API_KEY;
   if (!apiKey) {
-    throw new BraveAuthError();
+    throw new Error("BRAVE_API_KEY is not configured.");
   }
 
-  const count = opts?.count ?? 10;
-  const searchType = opts?.type ?? "web";
-  const endpoint = searchType === "news" ? "news/search" : "web/search";
+  const params = new URLSearchParams();
+  params.set("q", normalizedQuery);
 
-  const params = new URLSearchParams({
-    q: query,
-    count: String(count),
-  });
-
-  if (opts?.freshness) {
-    params.set("freshness", opts.freshness);
+  if (typeof options.count === "number" && Number.isFinite(options.count)) {
+    params.set("count", String(Math.max(1, Math.floor(options.count))));
   }
 
-  const url = `${BRAVE_API_BASE}/${endpoint}?${params}`;
-
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "Accept-Encoding": "gzip",
-      "X-Subscription-Token": apiKey,
-    },
-  });
-
-  if (response.status === 429) throw new BraveRateLimitError();
-  if (response.status === 401) throw new BraveAuthError();
-  if (!response.ok) {
-    throw new BraveApiError(
-      response.status,
-      `Brave API error: ${response.status} ${response.statusText}`,
-    );
+  if (typeof options.offset === "number" && Number.isFinite(options.offset)) {
+    params.set("offset", String(Math.max(0, Math.floor(options.offset))));
   }
 
-  const body = await response.json();
-
-  if (searchType === "news") {
-    return normalizeNewsResults(body);
+  if (options.freshness) {
+    params.set("freshness", FRESHNESS_MAP[options.freshness]);
   }
-  return normalizeWebResults(body);
-}
 
-function normalizeWebResults(body: any): SearchResult[] {
-  const results: SearchResult[] = [];
-  const webResults = body?.web?.results ?? [];
+  if (options.country) {
+    params.set("country", options.country);
+  }
 
-  for (const r of webResults) {
-    results.push({
-      title: r.title ?? "",
-      url: r.url ?? "",
-      snippet: r.description ?? "",
-      published: r.page_age ?? undefined,
-      score: r.relevance_score ?? undefined,
+  if (options.language) {
+    params.set("search_lang", options.language);
+  }
+
+  if (options.safeSearch) {
+    params.set("safesearch", options.safeSearch);
+  }
+
+  const requestUrl = buildRequestUrl(endpoint, params);
+
+  try {
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      signal: options.signal,
+      headers: {
+        Accept: "application/json",
+        "X-Subscription-Token": apiKey,
+      },
     });
-  }
 
-  return results;
+    if (response.status === 429) {
+      const details = await safeReadText(response);
+      const retryAfterSeconds = parseRetryAfter(response.headers.get("retry-after"));
+      throw new BraveRateLimitError("Brave API rate limit exceeded.", retryAfterSeconds, details);
+    }
+
+    if (!response.ok) {
+      const details = await safeReadText(response);
+      throw new BraveApiError(`Brave API request failed with status ${response.status}.`, response.status, details);
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new BraveApiError("Brave API returned invalid JSON.", response.status);
+    }
+
+    const rawResults = (payload as { web?: { results?: BraveWebResult[] } })?.web?.results;
+    if (!Array.isArray(rawResults)) {
+      return [];
+    }
+
+    return rawResults
+      .map((item) => normalizeBraveResult(item))
+      .filter((item): item is SearchResult => item !== null);
+  } catch (error) {
+    if (error instanceof BraveApiError) {
+      throw error;
+    }
+
+    const message = error instanceof Error ? error.message : "Unknown fetch error";
+    throw new BraveApiError(`Brave API network error: ${message}`, 0);
+  }
 }
 
-function normalizeNewsResults(body: any): SearchResult[] {
-  const results: SearchResult[] = [];
-  const newsResults = body?.results ?? [];
-
-  for (const r of newsResults) {
-    results.push({
-      title: r.title ?? "",
-      url: r.url ?? "",
-      snippet: r.description ?? "",
-      published: r.age ?? undefined,
-      score: r.relevance_score ?? undefined,
-    });
-  }
-
-  return results;
-}
+export const braveSearch = searchBrave;
+export default searchBrave;
