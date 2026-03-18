@@ -1,0 +1,486 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Queryx",
+    "version": "1.0.0",
+    "description": "Agent-native web search API. Pay per query in USDC via x402 protocol. No accounts, no subscriptions.",
+    "contact": {
+      "url": "https://queryx.run"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://queryx.run",
+      "description": "Production"
+    }
+  ],
+  "security": [
+    {
+      "x402Payment": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "x402Payment": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-PAYMENT",
+        "description": "x402 payment header. When a request lacks valid payment, the server returns HTTP 402 with a JSON body containing payment requirements (facilitator address, amount, network). The client signs a USDC payment authorization and includes it in this header on retry. See https://x402.org for protocol details."
+      }
+    },
+    "schemas": {
+      "SearchResult": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string",
+            "description": "AI-synthesized answer to the query"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            },
+            "description": "Web sources used to generate the answer"
+          },
+          "query": {
+            "type": "string",
+            "description": "The original search query"
+          }
+        },
+        "required": ["answer", "sources", "query"]
+      },
+      "Source": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "snippet": {
+            "type": "string"
+          }
+        },
+        "required": ["title", "url"]
+      },
+      "DeepSearchRequest": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The research query",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "depth": {
+            "type": "integer",
+            "description": "Number of research iterations (1-5)",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 3
+          }
+        },
+        "required": ["query"]
+      },
+      "DeepSearchResult": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string",
+            "description": "Comprehensive AI-synthesized research report"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            }
+          },
+          "query": {
+            "type": "string"
+          },
+          "iterations": {
+            "type": "integer",
+            "description": "Number of research iterations performed"
+          }
+        },
+        "required": ["answer", "sources", "query", "iterations"]
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ok"]
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": ["status"]
+      },
+      "PaymentRequired": {
+        "type": "object",
+        "description": "Returned when no valid x402 payment is provided",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "Payment required"
+          },
+          "paymentRequirements": {
+            "type": "object",
+            "properties": {
+              "scheme": {
+                "type": "string",
+                "example": "exact"
+              },
+              "network": {
+                "type": "string",
+                "example": "base-mainnet"
+              },
+              "maxAmountRequired": {
+                "type": "string",
+                "description": "Amount in USDC base units (6 decimals)",
+                "example": "1000"
+              },
+              "resource": {
+                "type": "string",
+                "format": "uri"
+              },
+              "description": {
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "payTo": {
+                "type": "string",
+                "description": "Facilitator address to pay"
+              },
+              "maxTimeoutSeconds": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "details": {
+            "type": "string"
+          }
+        }
+      },
+      "RateLimitError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "Rate limit exceeded"
+          },
+          "retryAfter": {
+            "type": "integer",
+            "description": "Seconds to wait before retrying"
+          }
+        }
+      },
+      "InternalError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "Internal server error"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/v1/search": {
+      "get": {
+        "operationId": "webSearch",
+        "summary": "Web search with AI synthesis",
+        "description": "Search the web and get an AI-synthesized answer with sources. Costs $0.001 USDC per query via x402.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "description": "Search query",
+            "example": "Fed rate decision impact on tech stocks"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful search",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResult"
+                },
+                "example": {
+                  "query": "Fed rate decision impact on tech stocks",
+                  "answer": "The Federal Reserve's latest rate decision has significant implications for tech stocks. Higher rates typically pressure growth stocks due to increased discount rates on future earnings...",
+                  "sources": [
+                    {
+                      "title": "Fed Holds Rates Steady - Reuters",
+                      "url": "https://reuters.com/markets/fed-rate-decision",
+                      "snippet": "The Federal Reserve held interest rates unchanged..."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required - no valid x402 payment header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequired"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error - invalid or missing query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/search/news": {
+      "get": {
+        "operationId": "newsSearch",
+        "summary": "News-focused search",
+        "description": "Search recent news with AI synthesis. Results sorted by recency. Costs $0.001 USDC per query via x402.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "description": "News search query",
+            "example": "Bitcoin ETF approval latest news"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful news search",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResult"
+                },
+                "example": {
+                  "query": "Bitcoin ETF approval latest news",
+                  "answer": "Recent developments in Bitcoin ETF applications show increasing regulatory engagement...",
+                  "sources": [
+                    {
+                      "title": "SEC Reviews Bitcoin ETF Applications - CoinDesk",
+                      "url": "https://coindesk.com/sec-bitcoin-etf",
+                      "snippet": "The SEC is currently reviewing multiple spot Bitcoin ETF applications..."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequired"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/search/deep": {
+      "post": {
+        "operationId": "deepSearch",
+        "summary": "Multi-source deep research",
+        "description": "Performs iterative multi-source research on a topic. More thorough than standard search. Costs $0.005 USDC per query via x402.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeepSearchRequest"
+              },
+              "example": {
+                "query": "Compare Layer 2 rollup architectures: optimistic vs zk",
+                "depth": 3
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful deep research",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeepSearchResult"
+                },
+                "example": {
+                  "query": "Compare Layer 2 rollup architectures: optimistic vs zk",
+                  "answer": "Layer 2 rollup architectures fall into two main categories: optimistic rollups and zero-knowledge (zk) rollups. Optimistic rollups like Arbitrum and Optimism assume transactions are valid by default and use fraud proofs for disputes...",
+                  "sources": [
+                    {
+                      "title": "Rollup Architecture Comparison - Ethereum.org",
+                      "url": "https://ethereum.org/en/developers/docs/scaling/layer-2-rollups/",
+                      "snippet": "Rollups perform transaction execution outside layer 1..."
+                    }
+                  ],
+                  "iterations": 3
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequired"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "summary": "Health check",
+        "description": "Returns service health status. Free, no payment required.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                },
+                "example": {
+                  "status": "ok",
+                  "version": "1.0.0"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
