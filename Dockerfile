@@ -4,5 +4,5 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 COPY . .
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD bun -e "const r = await fetch('http://localhost:3000/health'); if (!r.ok) process.exit(1)"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD bun -e "const port = process.env.PORT ?? 3000; const r = await fetch(`http://localhost:${port}/health`); if (!r.ok) process.exit(1)"
 CMD ["bun", "run", "src/index.ts"]

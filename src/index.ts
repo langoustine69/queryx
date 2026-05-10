@@ -3,6 +3,11 @@ import { rank } from "./logic/rank";
 import { synthesise } from "./logic/synth";
 
 const port = Number(process.env.PORT ?? 3000);
+const x402Network = process.env.X402_NETWORK ?? "base-mainnet";
+const x402Asset = process.env.X402_ASSET ?? "USDC";
+const x402Receiver = process.env.X402_RECEIVER;
+const searchPrice = process.env.QUERYX_PRICE_SEARCH ?? "0.001";
+const deepPrice = process.env.QUERYX_PRICE_DEEP ?? "0.005";
 
 type JsonBody = Record<string, unknown>;
 
@@ -16,7 +21,18 @@ function json(body: JsonBody, init?: ResponseInit): Response {
   });
 }
 
-function paymentRequired(): Response {
+function paymentRequired(price: string): Response {
+  const headers: Record<string, string> = {
+    "x-402-payment-required": "true",
+    "x-402-price": price,
+    "x-402-currency": x402Asset,
+    "x-402-network": x402Network,
+  };
+
+  if (x402Receiver) {
+    headers["x-402-receiver"] = x402Receiver;
+  }
+
   return json(
     {
       error: "PAYMENT_REQUIRED",
@@ -24,11 +40,7 @@ function paymentRequired(): Response {
     },
     {
       status: 402,
-      headers: {
-        "x-402-payment-required": "true",
-        "x-402-price": "0.001",
-        "x-402-currency": "USDC",
-      },
+      headers,
     },
   );
 }
@@ -53,12 +65,17 @@ function errorResponse(error: unknown): Response {
   return json({ error: "INTERNAL_ERROR", message }, { status: 500 });
 }
 
-async function handleSearch(request: Request, url: URL, type: "web" | "news" = "web"): Promise<Response> {
+async function handleSearch(
+  request: Request,
+  url: URL,
+  type: "web" | "news" = "web",
+  price = searchPrice,
+): Promise<Response> {
   const paymentSignature = url.searchParams.get("payment_signature");
   const headerSignature = request.headers.get("payment-signature");
   const query = url.searchParams.get("q");
 
-  if (!paymentSignature && !headerSignature) return paymentRequired();
+  if (!paymentSignature && !headerSignature) return paymentRequired(price);
   if (!query) return json({ error: "MISSING_QUERY", message: "Query parameter q is required." }, { status: 400 });
 
   try {
@@ -111,15 +128,12 @@ Bun.serve({
     }
 
     if (request.method === "POST" && url.pathname === "/v1/search/deep") {
-      const signature = request.headers.get("payment-signature");
-      if (!signature) return paymentRequired();
-
       const query = await parseDeepQuery(request);
       if (!query) return json({ error: "MISSING_QUERY", message: "JSON body must include q." }, { status: 400 });
 
       const deepUrl = new URL(request.url);
       deepUrl.searchParams.set("q", query);
-      return handleSearch(request, deepUrl);
+      return handleSearch(request, deepUrl, "web", deepPrice);
     }
 
     return json({ error: "NOT_FOUND" }, { status: 404 });
