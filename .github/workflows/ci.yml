@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run tests
+        run: bun test
+
+      - name: Type check
+        run: bun run tsc --noEmit
+
+      - name: Smoke test
+        run: |
+          bun run start &
+          app_pid=$!
+          trap 'kill $app_pid' EXIT
+          for i in {1..20}; do
+            if curl -fsS http://localhost:3000/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          scripts/smoke-test.sh http://localhost:3000

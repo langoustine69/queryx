@@ -4,9 +4,14 @@
   "type": "module",
   "scripts": {
     "test": "bun test",
-    "dev": "bun run src/index.ts"
+    "dev": "bun run src/index.ts",
+    "start": "bun run src/index.ts",
+    "tsc": "tsc",
+    "typecheck": "bun run tsc --noEmit",
+    "smoke": "scripts/smoke-test.sh"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "typescript": "^6.0.3"
   }
 }
