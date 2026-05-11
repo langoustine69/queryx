@@ -1,5 +1,7 @@
 # Queryx 🔍
 
+[![CI](https://github.com/langoustine69/queryx/actions/workflows/ci.yml/badge.svg)](https://github.com/langoustine69/queryx/actions/workflows/ci.yml)
+
 > Agent-native search API. Pay per query in USDC via x402. No accounts. No subscriptions. Structured JSON.
 
 **5-14x cheaper than Perplexity. Native x402 payments. Zero friction for agents.**
