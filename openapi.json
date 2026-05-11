@@ -1,0 +1,520 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Queryx Agent Search API",
+    "version": "0.1.0",
+    "summary": "Agent-native paid search endpoints using x402 payments.",
+    "description": "Queryx exposes web, news, and deep search endpoints that return structured JSON for agents. Paid endpoints require an x402 payment header before execution."
+  },
+  "servers": [
+    {
+      "url": "https://queryx.run",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Search",
+      "description": "Paid agent search endpoints"
+    },
+    {
+      "name": "System",
+      "description": "Free operational endpoints"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "x402Payment": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-PAYMENT",
+        "description": "x402 payment payload returned from the preceding 402 challenge. PAYMENT and PAYMENT-SIGNATURE are also accepted for compatible clients."
+      }
+    },
+    "schemas": {
+      "Source": {
+        "type": "object",
+        "required": ["title", "url", "snippet"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "examples": ["Result for bitcoin ETF flows"]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "examples": ["https://example.com/queryx-result"]
+          },
+          "snippet": {
+            "type": "string",
+            "examples": ["A concise source excerpt used for synthesis."]
+          },
+          "published": {
+            "type": "string",
+            "format": "date-time",
+            "examples": ["2026-05-11T04:00:00.000Z"]
+          }
+        }
+      },
+      "Freshness": {
+        "type": "object",
+        "required": ["fetchedAt", "resultsAge"],
+        "properties": {
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "examples": ["2026-05-11T04:00:00.000Z"]
+          },
+          "resultsAge": {
+            "type": "string",
+            "examples": ["1 hour"]
+          }
+        }
+      },
+      "TokenUsage": {
+        "type": "object",
+        "required": ["in", "out"],
+        "properties": {
+          "in": {
+            "type": "integer",
+            "minimum": 0,
+            "examples": [31]
+          },
+          "out": {
+            "type": "integer",
+            "minimum": 0,
+            "examples": [256]
+          }
+        }
+      },
+      "SearchResponse": {
+        "type": "object",
+        "required": [
+          "query",
+          "answer",
+          "sources",
+          "confidence",
+          "freshness",
+          "model",
+          "tokens"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "examples": ["bitcoin ETF flows"]
+          },
+          "answer": {
+            "type": "string",
+            "examples": ["Bitcoin ETF flow data shows steady institutional demand across recent sessions."]
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            }
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "examples": [0.78]
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "model": {
+            "type": "string",
+            "examples": ["queryx-fast-v1"]
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/TokenUsage"
+          }
+        }
+      },
+      "DeepSearchRequest": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "examples": ["Compare Brave, Tavily, and Perplexity pricing for agent search"]
+          },
+          "depth": {
+            "type": "string",
+            "enum": ["standard", "deep"],
+            "default": "deep",
+            "examples": ["deep"]
+          }
+        }
+      },
+      "PaymentChallenge": {
+        "type": "object",
+        "required": ["price", "payTo", "network", "facilitatorUrl", "x402Version"],
+        "properties": {
+          "price": {
+            "type": "string",
+            "examples": ["0.001"]
+          },
+          "payTo": {
+            "type": "string",
+            "examples": ["0x0000000000000000000000000000000000000000"]
+          },
+          "network": {
+            "type": "string",
+            "examples": ["base"]
+          },
+          "facilitatorUrl": {
+            "type": "string",
+            "format": "uri",
+            "examples": ["https://facilitator.daydreams.systems"]
+          },
+          "x402Version": {
+            "type": "integer",
+            "examples": [2]
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "examples": ["PAYMENT_REQUIRED"]
+              },
+              "message": {
+                "type": "string",
+                "examples": ["x402 payment is required for this endpoint"]
+              },
+              "details": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PaymentChallenge"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "PaymentRequired": {
+        "description": "x402 payment challenge. Sign the challenge and retry with X-PAYMENT, PAYMENT, or PAYMENT-SIGNATURE.",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            },
+            "description": "x402 challenge header."
+          },
+          "X-Accepted-Payment": {
+            "schema": {
+              "type": "string"
+            },
+            "description": "Serialized x402 payment requirements."
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "examples": {
+              "challenge": {
+                "value": {
+                  "error": {
+                    "code": "PAYMENT_REQUIRED",
+                    "message": "x402 payment is required for this endpoint",
+                    "details": {
+                      "price": "0.001",
+                      "payTo": "0x0000000000000000000000000000000000000000",
+                      "network": "base",
+                      "facilitatorUrl": "https://facilitator.daydreams.systems",
+                      "x402Version": 2
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Invalid query or body.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "examples": {
+              "missingQuery": {
+                "value": {
+                  "error": {
+                    "code": "BAD_REQUEST",
+                    "message": "Query is required"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "The client has exceeded the current rate limit.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "examples": {
+              "rateLimit": {
+                "value": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Rate limit exceeded"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Search provider or synthesis failure.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "examples": {
+              "serverError": {
+                "value": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "Search failed"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Health check",
+        "description": "Free readiness check for deployment platforms and agent registries.",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Service is healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["ok"]
+                    }
+                  }
+                },
+                "examples": {
+                  "healthy": {
+                    "value": {
+                      "status": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Paid web search",
+        "description": "Runs a web search and returns an agent-ready synthesized answer with sources.",
+        "operationId": "searchWeb",
+        "security": [
+          {
+            "x402Payment": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "examples": {
+              "market": {
+                "value": "Fed rate decision impact on tech stocks"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/v1/search/news": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Paid news search",
+        "description": "Runs a news-focused search sorted toward recent sources.",
+        "operationId": "searchNews",
+        "security": [
+          {
+            "x402Payment": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "examples": {
+              "news": {
+                "value": "latest ethereum ETF inflows"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "News answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/v1/search/deep": {
+      "post": {
+        "tags": ["Search"],
+        "summary": "Paid deep search",
+        "description": "Runs a deeper multi-source search and synthesis pass for research-style questions.",
+        "operationId": "searchDeep",
+        "security": [
+          {
+            "x402Payment": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeepSearchRequest"
+              },
+              "examples": {
+                "deepResearch": {
+                  "value": {
+                    "query": "Compare Brave, Tavily, and Perplexity pricing for agent search",
+                    "depth": "deep"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deep search answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "422": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    }
+  }
+}
