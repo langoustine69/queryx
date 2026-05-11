@@ -4,9 +4,22 @@
   "type": "module",
   "scripts": {
     "test": "bun test",
+    "typecheck": "tsc --noEmit",
     "dev": "bun run src/index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
+  },
+  "dependencies": {
+    "@lucid-agents/a2a": "^0.6.2",
+    "@lucid-agents/ap2": "^0.4.2",
+    "@lucid-agents/core": "^2.5.0",
+    "@lucid-agents/hono": "^0.9.6",
+    "@lucid-agents/http": "^1.10.2",
+    "@lucid-agents/identity": "^2.5.0",
+    "@lucid-agents/payments": "^2.5.0",
+    "@lucid-agents/wallet": "^0.6.2",
+    "hono": "^4.12.18",
+    "zod": "^4.4.3"
   }
 }
