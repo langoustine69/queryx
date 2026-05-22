@@ -11,7 +11,7 @@ function mockFetch(response: any, status = 200) {
       statusText: status === 200 ? "OK" : "Error",
       json: () => Promise.resolve(response),
     } as Response)
-  );
+  ) as unknown as typeof fetch;
 }
 
 beforeEach(() => {

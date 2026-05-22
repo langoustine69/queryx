@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "dev": "bun run src/index.ts",
+    "start": "bun run src/index.ts",
     "test": "bun test",
-    "dev": "bun run src/index.ts"
+    "typecheck": "tsc --noEmit",
+    "smoke": "bash scripts/smoke-test.sh"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "typescript": "^6.0.3"
   }
 }

@@ -1,5 +1,7 @@
 # Queryx 🔍
 
+[![CI](https://github.com/langoustine69/queryx/actions/workflows/ci.yml/badge.svg)](https://github.com/langoustine69/queryx/actions/workflows/ci.yml)
+
 > Agent-native search API. Pay per query in USDC via x402. No accounts. No subscriptions. Structured JSON.
 
 **5-14x cheaper than Perplexity. Native x402 payments. Zero friction for agents.**
@@ -27,6 +29,16 @@ curl -H "PAYMENT-SIGNATURE: <x402-sig>" \
 - GPT-4o-mini — synthesis
 - Railway — hosting
 - Base Mainnet — USDC payments
+
+## Deployment
+
+Railway deployment is configured with `Dockerfile` and `railway.json`.
+Copy `.env.example` into your Railway service variables, deploy with `railway up`,
+then run:
+
+```bash
+bash scripts/smoke-test.sh https://queryx.run
+```
 
 ## Competitive Positioning
 
